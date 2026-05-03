@@ -20,8 +20,8 @@ def keep_alive():
 
 # --- KONFIGURACJA BOTA ---
 TOKEN = os.getenv('DISCORD_TOKEN') 
-GUILD_ID = 1315680898456354917  
-CUSTOMER_ROLE_ID = 1500513889064980661 
+GUILD_ID = 1465510011445706892  # Twoje nowe ID serwera
+CUSTOMER_ROLE_ID = 1500513889064980661 # Upewnij się, że to ID roli też jest poprawne
 
 intents = discord.Intents.default()
 intents.members = True  
