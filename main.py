@@ -7,60 +7,55 @@ import time
 from flask import Flask, jsonify
 from threading import Thread
 
-# --- LOGIKA KODÓW ---
-active_codes = {} # Format: {"KOD": czas_wygasniecia}
+# --- BAZA KODÓW ---
+active_codes = {} # { "KOD": czas_wygasniecia }
 
-def generate_random_code():
+def create_code():
     return "BEB-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# --- SERWER WWW ---
+# --- SERWER WWW DLA SKRYPTU ---
 app = Flask('')
 
-@app.route('/verify/<code_input>')
-def verify_code(code_input):
-    current_time = time.time()
-    # Sprawdzamy czy kod istnieje i czy nie minęło 10 minut (600s)
-    if code_input in active_codes:
-        expiry = active_codes[code_input]
-        if current_time < expiry:
-            # Kod poprawny - usuwamy go (jednorazowy!)
-            del active_codes[code_input]
-            return jsonify({"status": "success", "msg": "Access Granted"})
-    
-    return jsonify({"status": "error", "msg": "Invalid or expired code"}), 403
+@app.route('/verify/<user_code>')
+def verify(user_code):
+    now = time.time()
+    if user_code in active_codes:
+        if now < active_codes[user_code]:
+            # Kod poprawny i świeży - usuwamy go (jednorazowy!)
+            del active_codes[user_code]
+            return jsonify({"auth": True})
+    return jsonify({"auth": False}), 403
 
 def run():
     app.run(host='0.0.0.0', port=10000)
 
 # --- BOT DISCORD ---
-class MyBot(discord.Client):
+class TitanAuth(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.default())
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        guild = discord.Object(id=1465510011445706892)
+        guild_id = discord.Object(id=1465510011445706892)
         
-        @self.tree.command(name="generuj_kod", description="Generuje 10-minutowy kod dostępu", guild=guild)
-        async def generuj_kod(interaction: discord.Interaction):
-            # ID TWOJEJ ROLI
-            CUSTOMER_ROLE_ID = 1500513889064980661
-            if not any(role.id == CUSTOMER_ROLE_ID for role in interaction.user.roles):
-                return await interaction.response.send_message("❌ Nie masz roli Customer!", ephemeral=True)
+        @self.tree.command(name="generuj_kod", description="Generuje 10-minutowy token dostępu", guild=guild_id)
+        async def generuj(interaction: discord.Interaction):
+            # SPRAWDZANIE ROLI
+            ROLE_ID = 1500513889064980661
+            if not any(r.id == ROLE_ID for r in interaction.user.roles):
+                return await interaction.response.send_message("❌ Nie masz rangi Customer!", ephemeral=True)
 
-            new_code = generate_random_code()
-            active_codes[new_code] = time.time() + 600 # Ważny 10 min
+            code = create_code()
+            active_codes[code] = time.time() + 600 # 10 minut
             
-            embed = discord.Embed(title="🔑 Twój kod dostępu", color=discord.Color.green())
-            embed.add_field(name="Kod", value=f"`{new_code}`")
-            embed.add_field(name="Ważność", value="10 minut")
-            embed.set_footer(text="Kod jest jednorazowy.")
-            
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            emb = discord.Embed(title="🔑 TOKEN BEBLOBO TITAN", color=0x00ff00)
+            emb.add_field(name="Kod", value=f"`{code}`")
+            emb.set_footer(text="Ważny 10 minut | Jednorazowy")
+            await interaction.response.send_message(embed=emb, ephemeral=True)
 
-        await self.tree.sync(guild=guild)
+        await self.tree.sync(guild=guild_id)
 
-bot = MyBot()
+bot = TitanAuth()
 
 if __name__ == "__main__":
     Thread(target=run).start()
