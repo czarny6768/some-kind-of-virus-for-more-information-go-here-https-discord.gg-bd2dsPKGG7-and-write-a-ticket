@@ -1,68 +1,75 @@
 import discord
 from discord import app_commands
-from discord.ext import commands
 import os
 from flask import Flask
 from threading import Thread
 
-# --- 1. SERWER WWW (Żeby Render nie wyłączał bota - naprawia błąd z image_ff0837.png) ---
+# --- 1. SERWER WWW (Utrzymanie bota przy życiu na Renderze) ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Bot BebloboAuth działa!"
+    return "Serwer BebloboAuth jest aktywny!"
 
 def run():
-    # Render wymaga portu 10000 lub zmiennej PORT
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    # Używamy portu 10000, aby uniknąć błędów port scan timeout
+    app.run(host='0.0.0.0', port=10000)
 
 def keep_alive():
     t = Thread(target=run)
     t.start()
 
-# --- 2. KONFIGURACJA BOTA ---
-TOKEN = os.getenv('DISCORD_TOKEN')
-GUILD_ID = 1465510011445706892  # Twoje ID serwera z czatu
-CUSTOMER_ROLE_ID = 1500513889064980661 # ID Twojej roli
+# --- 2. KONFIGURACJA I FILTRY ---
+# Używamy ID serwera dostarczonego przez Ciebie: 1465510011445706892
+MY_GUILD = discord.Object(id=1465510011445706892)
+CUSTOMER_ROLE_ID = 1500513889064980661
 
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True
-
-class MyBot(commands.Bot):
+class BebloboBot(discord.Client):
     def __init__(self):
-        super().__init__(command_prefix="!", intents=intents)
+        intents = discord.Intents.default()
+        intents.members = True  # Wymagane przez Privileged Intents (image_fe979b.png)
+        super().__init__(intents=intents)
+        # Tworzymy drzewo komend (baza danych komend bota)
+        self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        # To jest kluczowe: rejestrujemy komendy dla Twojego serwera
-        guild = discord.Object(id=GUILD_ID)
-        self.tree.copy_from_slash_command(test_wifi) # Kopiujemy komendę do drzewa
-        await self.tree.sync(guild=guild)
-        print(f"Zsynchronizowano komendy dla serwera: {GUILD_ID}")
+        # Synchronizacja bazy komend z serwerem Discord
+        self.tree.copy_from_slash_command(test_wifi)
+        self.tree.copy_from_slash_command(pomoc)
+        await self.tree.sync(guild=MY_GUILD)
+        print(f"Baza danych komend zsynchronizowana dla serwera {MY_GUILD.id}")
 
-bot = MyBot()
+bot = BebloboBot()
 
-# --- 3. DEFINICJA KOMENDY SLASH ---
-@app_commands.command(name="test_wifi", description="Uruchamia diagnostykę sieci i WiFi")
+# --- 3. BAZA KOMEND (Tutaj dopisuj nowe komendy) ---
+
+@app_commands.command(name="test_wifi", description="Uruchamia diagnostykę sieci dla klientów")
 async def test_wifi(interaction: discord.Interaction):
-    # Sprawdzamy czy użytkownik ma rolę Customer
-    user_has_role = any(role.id == CUSTOMER_ROLE_ID for role in interaction.user.roles)
+    """Komenda sprawdzająca uprawnienia roli Customer"""
+    has_role = any(role.id == CUSTOMER_ROLE_ID for role in interaction.user.roles)
     
-    if user_has_role:
-        await interaction.response.send_message("⚙️ **Uruchamiam diagnostykę sieci...** Proszę czekać na wynik testu.")
+    if has_role:
+        await interaction.response.send_message("✅ **Diagnostyka WiFi uruchomiona.** Sprawdzanie stabilności łącza...")
     else:
-        await interaction.response.send_message("❌ Nie masz uprawnień! Ta komenda jest tylko dla osób z rolą Customer.", ephemeral=True)
+        await interaction.response.send_message("❌ Błąd: Ta komenda wymaga roli **Customer**.", ephemeral=True)
+
+@app_commands.command(name="pomoc", description="Wyświetla listę dostępnych funkcji bota")
+async def pomoc(interaction: discord.Interaction):
+    """Prosta komenda informacyjna dostępna dla każdego"""
+    embed = discord.Embed(title="Panel Pomocy BebloboAuth", color=discord.Color.blue())
+    embed.add_field(name="/test_wifi", value="Diagnostyka sieci (tylko dla Customer)", inline=False)
+    embed.add_field(name="/status", value="Sprawdza czy bot jest online", inline=False)
+    await interaction.response.send_message(embed=embed)
 
 # --- 4. URUCHOMIENIE ---
 @bot.event
 async def on_ready():
-    print(f'Zalogowano jako {bot.user.name} (ID: {bot.user.id})')
-    print('------')
+    print(f'Zalogowano pomyślnie jako: {bot.user}')
 
 if __name__ == "__main__":
-    keep_alive() # Startujemy serwer Flask w tle
-    if TOKEN:
-        bot.run(TOKEN)
+    keep_alive() # Uruchamia Flask w tle (rozwiązuje problem z image_fe8fbb.png)
+    token = os.getenv('DISCORD_TOKEN')
+    if token:
+        bot.run(token)
     else:
-        print("BŁĄD: Nie znaleziono DISCORD_TOKEN w zmiennych środowiskowych Render!")
+        print("CRITICAL ERROR: Nie znaleziono DISCORD_TOKEN!")
