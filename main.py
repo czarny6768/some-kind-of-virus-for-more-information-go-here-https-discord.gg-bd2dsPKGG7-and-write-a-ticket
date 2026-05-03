@@ -7,8 +7,11 @@ from threading import Thread
 # --- MINIMALNY SERWER WWW ---
 app = Flask('')
 @app.route('/')
-def home(): return "Bot Online"
-def run(): app.run(host='0.0.0.0', port=10000)
+def home():
+    return "Bot Online"
+
+def run():
+    app.run(host='0.0.0.0', port=10000)
 
 # --- BOT ---
 class MyBot(discord.Client):
@@ -16,20 +19,23 @@ class MyBot(discord.Client):
         intents = discord.Intents.default()
         intents.members = True
         super().__init__(intents=intents)
+        # Tworzymy drzewo komend
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        # To wysyła komendy na Twój serwer
+        # ID Twojego serwera
         guild = discord.Object(id=1465510011445706892)
-        self.tree.copy_from_slash_command(test_wifi)
+        
+        # DODAJEMY KOMENDĘ BEZPOŚREDNIO DO DRZEWA
+        @self.tree.command(name="test_wifi", description="Test połączenia", guild=guild)
+        async def test_wifi(interaction: discord.Interaction):
+            await interaction.response.send_message("✅ Bot BebloboAuth działa i słucha!")
+
+        # Synchronizujemy
         await self.tree.sync(guild=guild)
-        print("Komendy zsynchronizowane!")
+        print("Komendy zsynchronizowane na serwerze!")
 
 bot = MyBot()
-
-@app_commands.command(name="test_wifi", description="Test")
-async def test_wifi(interaction: discord.Interaction):
-    await interaction.response.send_message("Bot działa i słucha!")
 
 if __name__ == "__main__":
     Thread(target=run).start() # Start Flaska
