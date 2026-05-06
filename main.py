@@ -4,114 +4,106 @@ import os
 import random
 import string
 import time
-import asyncio
 from flask import Flask, jsonify
 from threading import Thread
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# --- KONFIGURACJA SYSTEMU ---
-active_tokens = {} 
-user_usage = {}   
-user_subscriptions = {} 
+# --- KONFIGURACJA ---
+GUILD_ID = 1465510011445706892
+ID_ROLI_OWNER = 1465514077366518033
 
-# TWOJE ID RANG I LIMITY
-RANKS = {
-    1500513889064980661: {"name": "Customer", "limit": 5},
-    1500535408147173457: {"name": "Pro", "limit": 10},      
-    1500535548438253771: {"name": "Master", "limit": 999999} 
+# Mapowanie ID ról na limity w maszynce
+RANKS_CONFIG = {
+    1465514077366518033: {"name": "OWNER", "limit": 1500},
+    1500535548438253771: {"name": "MASTER", "limit": 1500},
+    1500535408147173457: {"name": "PRO", "limit": 400},
+    1500513889064980661: {"name": "CUSTOMER", "limit": 150}
 }
+
+active_tokens = {} # Kody tymczasowe do maszynki
+user_usage = {}   # Licznik dzienny
 
 app = Flask('')
 
-@app.route('/')
-def home():
-    return "Beblobo Auth V3 - Limity Aktywne"
-
 @app.route('/verify/<user_code>/<discord_id>')
 def verify(user_code, discord_id):
+    # Bypass dla Ownera
+    if user_code.lower() == "beblobo":
+        return jsonify({"auth": True, "info": "Bypass"}), 200
+
     now = time.time()
     if user_code in active_tokens:
         data = active_tokens[user_code]
-        if str(data["user_id"]) == str(discord_id):
-            if now <= data["expiry"]:
-                del active_tokens[user_code]
-                return jsonify({"auth": True})
+        if str(data["user_id"]) == str(discord_id) and now <= data["expiry"]:
+            del active_tokens[user_code]
+            return jsonify({"auth": True}), 200
+            
     return jsonify({"auth": False}), 403
 
 def run_flask():
     app.run(host='0.0.0.0', port=10000)
 
-class TitanAuth(discord.Client):
+class TitanV2(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.members = True 
-        intents.message_content = True
+        intents.members = True # KLUCZOWE: Pozwala czytać rangi z DC
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        guild_id = discord.Object(id=1465510011445706892)
-        
-        # --- KOMENDA /NADAJ ---
-        @self.tree.command(name="nadaj", description="Nadaje range na dni", guild=guild_id)
-        @app_commands.checks.has_permissions(administrator=True)
-        async def nadaj(interaction: discord.Interaction, uzytkownik: discord.Member, ranga: discord.Role, dni: int):
-            expiry = datetime.now() + timedelta(days=dni)
-            user_subscriptions[uzytkownik.id] = {"role_id": ranga.id, "expiry": expiry}
-            try:
-                await uzytkownik.add_roles(ranga)
-                await interaction.response.send_message(f"✅ Nadano {ranga.name} dla {uzytkownik.mention} na {dni} dni.")
-            except:
-                await interaction.response.send_message("❌ Blad uprawnien roli bota!")
+        guild_obj = discord.Object(id=GUILD_ID)
 
-        # --- KOMENDA /LICENCJA (Z LIMITAMI) ---
-        @self.tree.command(name="licencja", description="Generuje kod 20s (z limitami rang)", guild=guild_id)
+        @self.tree.command(name="licencja", description="Pobiera kod na podstawie Twoich rang na DC", guild=guild_obj)
         async def licencja(interaction: discord.Interaction):
-            user_id = interaction.user.id
+            user = interaction.user
+            user_id = user.id
             
-            # Sprawdzanie najwyższego dostępnego limitu dla użytkownika
-            user_limit = -1
-            r_name = ""
-            for r_id, data in RANKS.items():
-                if any(role.id == r_id for role in interaction.user.roles):
-                    if data["limit"] > user_limit:
-                        user_limit = data["limit"]
-                        r_name = data["name"]
+            # SPRAWDZANIE RANG BEZPOŚREDNIO Z DISCORDA
+            max_limit = -1
+            ranga_name = "BRAK"
+            
+            for role in user.roles:
+                if role.id in RANKS_CONFIG:
+                    cfg = RANKS_CONFIG[role.id]
+                    if cfg["limit"] > max_limit:
+                        max_limit = cfg["limit"]
+                        ranga_name = cfg["name"]
 
-            if user_limit == -1:
-                return await interaction.response.send_message("❌ Brak rangi! Nie mozesz generowac kodow.", ephemeral=True)
+            # Jeśli użytkownik jest Adminem lub Ownerem
+            if user.guild_permissions.administrator or any(r.id == ID_ROLI_OWNER for r in user.roles):
+                max_limit = 1500
+                ranga_name = "OWNER/ADMIN"
 
-            # Resetowanie limitu dziennego
+            if max_limit == -1:
+                return await interaction.response.send_message("❌ Nie posiadasz żadnej roli uprawniającej do użycia TitanV2!", ephemeral=True)
+
+            # Limit dzienny
             today = datetime.now().strftime("%Y-%m-%d")
             if user_id not in user_usage or user_usage[user_id]["date"] != today:
                 user_usage[user_id] = {"count": 0, "date": today}
 
-            # Sprawdzanie czy nie przekroczono limitu
-            if user_usage[user_id]["count"] >= user_limit:
-                return await interaction.response.send_message(f"❌ Wykorzystales dzienny limit ({user_limit}) dla rangi {r_name}!", ephemeral=True)
+            if ranga_name != "OWNER/ADMIN" and user_usage[user_id]["count"] >= max_limit:
+                return await interaction.response.send_message(f"❌ Wykorzystałeś limit dla rangi {ranga_name}!", ephemeral=True)
 
             # Generowanie kodu
-            code = "BEB-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-            active_tokens[code] = {"user_id": user_id, "expiry": time.time() + 20}
-            
-            # Zwiekszenie licznika uzyc
+            code = "TITAN-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+            active_tokens[code] = {"user_id": user_id, "expiry": time.time() + 30}
             user_usage[user_id]["count"] += 1
+
+            embed = discord.Embed(title="🔐 TITAN V2 - AUTORYZACJA", color=0x00ffff)
+            embed.add_field(name="TWÓJ KOD", value=f"**`{code}`**", inline=False)
+            embed.add_field(name="RANGA WYKRYTA", value=f"**{ranga_name}**", inline=True)
+            embed.add_field(name="WAŻNOŚĆ", value="30 sekund", inline=True)
+            embed.set_footer(text="Wpisz kod w maszynce, aby uzyskać dostęp.")
             
-            pozostalo = user_limit - user_usage[user_id]["count"]
-            if user_limit > 1000: pozostalo = "∞"
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-            emb = discord.Embed(title="🔐 KOD WYGENEROWANY", color=0xFF0000)
-            emb.add_field(name="KOD", value=f"**`{code}`**")
-            emb.add_field(name="POZOSTAŁO DZIŚ", value=f"**{pozostalo}**")
-            await interaction.response.send_message(embed=emb, ephemeral=True)
+        await self.tree.sync(guild=guild_obj)
 
-        await self.tree.sync(guild=guild_id)
-
-bot = TitanAuth()
+bot = TitanV2()
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
     TOKEN = os.getenv('DISCORD_TOKEN')
     if TOKEN:
-        print("🚀 System Beblobo z limitami wystartowal!")
         bot.run(TOKEN)
