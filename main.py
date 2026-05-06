@@ -4,99 +4,92 @@ from discord import app_commands
 import random
 import string
 import json
+import threading
+from flask import Flask, jsonify
 from datetime import datetime
 
 # --- KONFIGURACJA ---
 TOKEN = os.getenv("DISCORD_TOKEN")
-# ID Twojego serwera
-GUILD_ID = 1465510011445706892 
+ADMIN_IDS = [1315680898456354917, 1152563201590956072]
 
-# ID RANG I ICH LIMITY DZIENNE
+# Rangi i ich limity (0 = brak limitu dla mastera)
 ROLES_CONFIG = {
-    1500535548438253771: {"name": "master", "limit": 999999}, # Bez limitu
-    1500535408147173457: {"name": "pro", "limit": 5},          # Przykład: 5 na dzień
-    1500513889064980661: {"name": "customer", "limit": 2}      # Przykład: 2 na dzień
+    1500535548438253771: {"name": "master", "limit": 999999},
+    1500535408147173457: {"name": "pro", "limit": 10},
+    1500513889064980661: {"name": "customer", "limit": 5}
 }
 
-class TitanGen(discord.Client):
+# Baza danych w pamięci (Render i tak czyści pliki, więc to najlepsze rozwiązanie)
+db = {"keys": {}, "usage": {}}
+
+# --- SERWER API DLA TITANA (Naprawia błąd Render) ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "TITAN API IS ONLINE"
+
+@app.route('/get_keys')
+def get_keys():
+    return jsonify(db["keys"])
+
+def run_api():
+    # Render wymaga bindowania portu
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# --- BOT DISCORD ---
+class TitanBot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.members = True # Wymagane do sprawdzania rang
+        intents.members = True
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
         await self.tree.sync()
 
-bot = TitanGen()
-
-# --- FUNKCJE BAZY DANYCH ---
-def get_db():
-    if not os.path.exists("database.json"): return {"keys": {}, "usage": {}}
-    with open("database.json", "r") as f:
-        try: return json.load(f)
-        except: return {"keys": {}, "usage": {}}
-
-def save_db(db):
-    with open("database.json", "w") as f:
-        json.dump(db, f, indent=4)
+bot = TitanBot()
 
 @bot.event
 async def on_ready():
-    print(f'✅ GENERATOR GOTOWY | {bot.user}')
+    print(f'✅ BOT ONLINE: {bot.user}')
 
-@bot.tree.command(name="licencja", description="Generuje klucz na podstawie Twojej rangi")
+@bot.tree.command(name="licencja", description="Generuje klucz licencyjny")
 async def licencja(interaction: discord.Interaction):
     user = interaction.user
-    db = get_db()
     
-    # 1. Sprawdzanie rangi użytkownika
-    user_role_id = None
+    # Sprawdzanie rangi
     role_info = None
-    
-    # Szukamy najwyższej rangi jaką ma użytkownik z listy dozwolonych
-    for r_id in ROLES_CONFIG:
+    for r_id, cfg in ROLES_CONFIG.items():
         if discord.utils.get(user.roles, id=r_id):
-            user_role_id = r_id
-            role_info = ROLES_CONFIG[r_id]
+            role_info = cfg
             break
-
+            
     if not role_info:
-        await interaction.response.send_message("❌ Nie masz rangi Customer, Pro lub Master, aby wygenerować klucz!", ephemeral=True)
+        await interaction.response.send_message("❌ Brak wymaganej rangi!", ephemeral=True)
         return
 
-    # 2. Sprawdzanie limitu dziennego
+    # Limity dzienne
     today = datetime.now().strftime("%Y-%m-%d")
-    u_id_str = str(user.id)
-    
-    if u_id_str not in db["usage"]:
-        db["usage"][u_id_str] = {"date": today, "count": 0}
-    
-    # Reset limitu jeśli jest nowy dzień
-    if db["usage"][u_id_str]["date"] != today:
-        db["usage"][u_id_str] = {"date": today, "count": 0}
+    u_id = str(user.id)
+    if u_id not in db["usage"] or db["usage"][u_id]["date"] != today:
+        db["usage"][u_id] = {"date": today, "count": 0}
 
-    # Sprawdzenie czy limit został przekroczony
-    if db["usage"][u_id_str]["count"] >= role_info["limit"]:
-        await interaction.response.send_message(f"❌ Wykorzystałeś już swój dzienny limit ({role_info['limit']}) dla rangi {role_info['name']}!", ephemeral=True)
+    if db["usage"][u_id]["count"] >= role_info["limit"]:
+        await interaction.response.send_message("❌ Limit wykorzystany!", ephemeral=True)
         return
 
-    # 3. Generowanie klucza
+    # Generowanie klucza
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
     key = f"{role_info['name']}-{suffix}"
-
-    # 4. Zapis do bazy
-    db["keys"][key] = role_info["name"]
-    db["usage"][u_id_str]["count"] += 1
-    save_db(db)
-
-    # 5. Odpowiedź
-    embed = discord.Embed(title="🔑 KLUCZ WYGENEROWANY", color=0xFF00FF)
-    embed.add_field(name="Klucz", value=f"`{key}`", inline=False)
-    embed.add_field(name="Ranga", value=role_info["name"].upper(), inline=True)
-    embed.add_field(name="Dzisiejsze użycie", value=f"{db['usage'][u_id_str]['count']}/{role_info['limit']}", inline=True)
-    embed.set_footer(text="System Titan V2")
     
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    db["keys"][key] = role_info["name"]
+    db["usage"][u_id]["count"] += 1
 
-bot.run(TOKEN)
+    await interaction.response.send_message(f"🔑 Twój klucz: `{key}`\nRanga: **{role_info['name'].upper()}**", ephemeral=True)
+
+if __name__ == "__main__":
+    # Start API w tle
+    threading.Thread(target=run_api, daemon=True).start()
+    bot.run(TOKEN)
