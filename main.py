@@ -1,14 +1,16 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request
 import requests
-import datetime
 import os
+import datetime
 
 app = Flask(__name__)
 
 # --- KONFIGURACJA ---
+# Wklej tutaj swój link do Webhooka Discord
 DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1501964599313039382/G4LaDablfU8cajOZsXHZX7j3JXWUMFQxG-DNPeSOg8nkkPNhOAvscq26ac7SZ9SFmayo"
 
-# Baza kluczy
+# Baza kluczy (Klucz : HWID)
+# Na początku HWID jest None - przypisze się przy pierwszym zalogowaniu
 licenses = {
     "TITAN-ADMIN-123": {"hwid": None, "ranga": "ADMIN", "banned": False},
     "SEBA-KLUCZ-2024": {"hwid": None, "ranga": "USER", "banned": False}
@@ -17,65 +19,92 @@ licenses = {
 def send_to_discord(title, fields, color=3447003):
     payload = {
         "embeds": [{
-            "title": title, "color": color, "fields": fields,
-            "footer": {"text": "Titan System"}, "timestamp": datetime.datetime.utcnow().isoformat()
+            "title": title,
+            "color": color,
+            "fields": fields,
+            "footer": {"text": "Titan V2 System"},
+            "timestamp": datetime.datetime.utcnow().isoformat()
         }]
     }
-    try: requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
-    except: pass
+    try:
+        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
+    except:
+        pass
 
 @app.route('/')
 def home():
-    return "Titan API is Online. Use /auth for client."
+    return "Titan Server Online - Hello Kitty Edition"
 
-# --- KOMENDY ADMINA (używasz w przeglądarce) ---
-# Przykład: /admin?cmd=resethwid&key=TITAN-ADMIN-123
-@app.route('/admin')
-def admin_cmds():
-    cmd = request.args.get('cmd')
-    key = request.args.get('key')
-    
-    if key not in licenses: return "KEY_NOT_FOUND", 404
-    
-    if cmd == "resethwid":
-        licenses[key]["hwid"] = None
-        return f"SUCCESS: HWID for {key} has been reset."
-    
-    if cmd == "ban":
-        licenses[key]["banned"] = True
-        return f"SUCCESS: {key} has been banned."
-
-    return "INVALID_COMMAND", 400
-
-# --- AUTORYZACJA KLIENTA ---
+# --- SYSTEM AUTORYZACJI ---
 @app.route('/auth')
 def auth():
     key = request.args.get('key')
     hwid = request.args.get('hwid')
-    if key not in licenses: return "INVALID_KEY", 401
-    user = licenses[key]
-    if user["banned"]: return "BANNED", 403
     
+    if not key or key not in licenses:
+        return "INVALID_KEY", 401
+    
+    user = licenses[key]
+    
+    if user["banned"]:
+        return "BANNED", 403
+    
+    # Pierwsze logowanie - przypisanie HWID
     if user["hwid"] is None:
         user["hwid"] = hwid
-        send_to_discord("🆕 AKTYWACJA", [{"name": "Klucz", "value": key}, {"name": "HWID", "value": hwid}])
-    elif user["hwid"] != hwid:
+        send_to_discord("🆕 AKTYWACJA", [
+            {"name": "Klucz", "value": key, "inline": True},
+            {"name": "HWID", "value": hwid, "inline": True}
+        ], color=65280) # Zielony
+        return f"SUCCESS|{user['ranga']}"
+    
+    # Sprawdzanie czy HWID się zgadza
+    if user["hwid"] != hwid:
+        send_to_discord("🚨 PRÓBA WŁAMANIA", [
+            {"name": "Klucz", "value": key},
+            {"name": "Oryginalny HWID", "value": user["hwid"]},
+            {"name": "Obecny HWID", "value": hwid}
+        ], color=16711680) # Czerwony
         return "HWID_MISMATCH", 403
+        
     return f"SUCCESS|{user['ranga']}"
 
+# --- LOGOWANIE ATAKU ---
 @app.route('/log_attack')
-def log():
+def log_attack():
     key = request.args.get('key')
     target = request.args.get('host')
     port = request.args.get('port')
     time = request.args.get('time')
-    send_to_discord("🔥 TEST SIECI", [
+    
+    send_to_discord("🔥 TEST SIECI (UDP)", [
         {"name": "Operator", "value": key, "inline": True},
         {"name": "Cel", "value": f"{target}:{port}", "inline": True},
         {"name": "Czas", "value": f"{time}s", "inline": True}
-    ], color=15105570)
+    ], color=16753920) # Pomarańczowy
+    
     return "OK"
 
+# --- KOMENDY ADMINA (PRZEZ PRZEGLĄDARKĘ) ---
+@app.route('/admin')
+def admin():
+    cmd = request.args.get('cmd')
+    key = request.args.get('key')
+    
+    if key not in licenses:
+        return "KEY_NOT_FOUND"
+        
+    if cmd == "resethwid":
+        licenses[key]["hwid"] = None
+        return f"SUCCESS: HWID dla {key} został zresetowany."
+        
+    if cmd == "ban":
+        licenses[key]["banned"] = True
+        return f"SUCCESS: Klucz {key} został zablokowany."
+        
+    return "UNKNOWN_COMMAND"
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    # Render używa portu zdefiniowanego w zmiennej środowiskowej
+    port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
