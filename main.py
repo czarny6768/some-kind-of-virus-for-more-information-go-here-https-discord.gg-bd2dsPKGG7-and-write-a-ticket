@@ -1,122 +1,71 @@
-import discord
-from discord import app_commands
-from discord.ext import commands
+from flask import Flask, request, jsonify
 import requests
-import json
-import random
-import string
-import os  # Dodano do obsługi zmiennych środowiskowych
+import datetime
+import os
+
+app = Flask(__name__)
 
 # --- KONFIGURACJA ---
-# Token jest teraz pobierany bezpiecznie z hostingu
-TOKEN = os.environ.get("DISCORD_TOKEN")
-RENDER_URL = "https://twoja-strona.onrender.com"
-ADMIN_ROLE_ID = 123456789012345678  # Zmień na ID Twojej roli Admina
+# Tu wklej swój Webhook z Discorda
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1501964599313039382/G4LaDablfU8cajOZsXHZX7j3JXWUMFQxG-DNPeSOg8nkkPNhOAvscq26ac7SZ9SFmayo"
 
-class TitanBot(commands.Bot):
-    def __init__(self):
-        intents = discord.Intents.default()
-        intents.message_content = True
-        super().__init__(command_prefix="!", intents=intents)
+# Twoja lista kluczy (Klucz : Dane)
+licenses = {
+    "TITAN-ADMIN-123": {"hwid": None, "ranga": "ADMIN", "banned": False},
+    "SEBA-TEST-999": {"hwid": None, "ranga": "USER", "banned": False}
+}
 
-    async def setup_hook(self):
-        # Synchronizacja komend slash przy starcie
-        await self.tree.sync()
-        print(f"Zsynchronizowano komendy slash dla {self.user}")
-
-bot = TitanBot()
-
-@bot.event
-async def on_ready():
-    print(f'Zalogowano jako {bot.user.name}')
-    await bot.change_presence(activity=discord.Streaming(name="TITAN V2 MONITOR", url="https://twitch.tv/"))
-
-# --- KOMENDY SLASH (/) ---
-
-@bot.tree.command(name="genkey", description="Generuje nowy klucz licencyjny (Tylko Admin)")
-@app_commands.describe(ranga="Ranga dla klucza (np. USER, VIP, MASTER)")
-async def genkey(interaction: discord.Interaction, ranga: str = "USER"):
-    if not any(role.id == ADMIN_ROLE_ID for role in interaction.user.roles):
-        await interaction.response.send_message("⛔ Brak uprawnień!", ephemeral=True)
-        return
-
-    key = "TITAN-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
-    
-    embed = discord.Embed(title="🔑 WYGENEROWANO NOWY KLUCZ", color=discord.Color.green())
-    embed.add_field(name="Klucz", value=f"``` {key} ```", inline=False)
-    embed.add_field(name="Ranga", value=f"`{ranga}`", inline=True)
-    embed.set_footer(text=f"Przez: {interaction.user.name}")
-    
-    await interaction.response.send_message(f"✅ Klucz wygenerowany. Sprawdź DM.", ephemeral=True)
-    try:
-        await interaction.user.send(embed=embed)
-    except:
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-@bot.tree.command(name="wl", description="Dodaje użytkownika do Białej Listy (HWID + Nick)")
-@app_commands.describe(hwid="Unikalny identyfikator sprzętu", dc_nick="Nick użytkownika na Discordzie")
-async def wl(interaction: discord.Interaction, hwid: str, dc_nick: str):
-    if not any(role.id == ADMIN_ROLE_ID for role in interaction.user.roles):
-        await interaction.response.send_message("⛔ Brak uprawnień!", ephemeral=True)
-        return
-
+def send_to_discord(title, fields, color=3447003):
     payload = {
-        "hwid": hwid,
-        "username": dc_nick,
-        "added_by": interaction.user.name
+        "embeds": [{
+            "title": title,
+            "color": color,
+            "fields": fields,
+            "footer": {"text": "Titan V2 Logging System"}
+        }]
     }
-    
-    await interaction.response.defer() # Informujemy Discorda, że przetwarzamy dane
     try:
-        r = requests.post(f"{RENDER_URL}/whitelist/add", json=payload, timeout=5)
-        
-        embed = discord.Embed(title="✅ DODANO DO WHITELIST", color=discord.Color.blue())
-        embed.add_field(name="HWID", value=f"```{hwid}```", inline=False)
-        embed.add_field(name="Użytkownik DC", value=f"**{dc_nick}**", inline=True)
-        embed.set_footer(text=f"Zatwierdził: {interaction.user.name}")
-        
-        await interaction.followup.send(embed=embed)
-    except Exception as e:
-        await interaction.followup.send(f"⚠️ Błąd połączenia z API na Renderze: {e}")
-
-@bot.tree.command(name="unwl", description="Usuwa HWID z Białej Listy")
-@app_commands.describe(hwid="HWID do usunięcia")
-async def unwl(interaction: discord.Interaction, hwid: str):
-    if not any(role.id == ADMIN_ROLE_ID for role in interaction.user.roles):
-        await interaction.response.send_message("⛔ Brak uprawnień!", ephemeral=True)
-        return
-
-    await interaction.response.defer()
-    try:
-        r = requests.delete(f"{RENDER_URL}/whitelist/remove/{hwid}", timeout=5)
-        await interaction.followup.send(f"🗑️ HWID `{hwid}` został usunięty z listy.")
-    except Exception as e:
-        await interaction.followup.send(f"❌ Błąd podczas usuwania: {e}")
-
-@bot.tree.command(name="server", description="Sprawdza status serwera TITAN")
-async def server(interaction: discord.Interaction):
-    await interaction.response.defer()
-    try:
-        r = requests.get(f"{RENDER_URL}/", timeout=5)
-        if r.status_code == 200:
-            await interaction.followup.send("🟢 **TITAN API:** Online & Secure")
-        else:
-            await interaction.followup.send(f"🔴 **TITAN API:** Błąd {r.status_code}")
+        requests.post(DISCORD_WEBHOOK_URL, json=payload)
     except:
-        await interaction.followup.send("🔴 **TITAN API:** Offline (Render odpoczywa?)")
+        pass
 
-@bot.tree.command(name="help", description="Lista komend TITAN V2")
-async def help_titan(interaction: discord.Interaction):
-    embed = discord.Embed(title="🛸 TITAN V2 - SYSTEM DOWODZENIA", color=discord.Color.purple())
-    embed.add_field(name="/genkey", value="Generuje licencję (Admin).", inline=False)
-    embed.add_field(name="/wl", value="Dodaje HWID i Nick do WL (Admin).", inline=False)
-    embed.add_field(name="/unwl", value="Usuwa dostęp dla HWID (Admin).", inline=False)
-    embed.add_field(name="/server", value="Status połączenia z Render.", inline=False)
-    embed.set_footer(text="Używaj komend z rozwagą.")
-    await interaction.response.send_message(embed=embed)
+@app.route('/')
+def home():
+    return "Titan Server Online"
 
-# Sprawdzanie czy token został poprawnie wczytany przed startem
-if TOKEN:
-    bot.run(TOKEN)
-else:
-    print("❌ BŁĄD: Nie znaleziono zmiennej DISCORD_TOKEN w ustawieniach hostingu!")
+@app.route('/auth')
+def auth():
+    key = request.args.get('key')
+    hwid = request.args.get('hwid')
+    
+    if key not in licenses:
+        return "INVALID_KEY", 401
+    
+    user = licenses[key]
+    if user["banned"]: return "BANNED", 403
+    
+    if user["hwid"] is None:
+        user["hwid"] = hwid
+        send_to_discord("🆕 AKTYWACJA KLUCZA", [{"name": "Klucz", "value": key}, {"name": "HWID", "value": hwid}])
+    elif user["hwid"] != hwid:
+        return "HWID_MISMATCH", 403
+        
+    return f"SUCCESS|{user['ranga']}"
+
+@app.route('/log_attack')
+def log():
+    key = request.args.get('key')
+    target = request.args.get('host')
+    port = request.args.get('port')
+    time = request.args.get('time')
+    
+    send_to_discord("🔥 URUCHOMIONO TEST", [
+        {"name": "Klucz", "value": key, "inline": True},
+        {"name": "Cel", "value": f"{target}:{port}", "inline": True},
+        {"name": "Czas", "value": f"{time}s", "inline": True}
+    ], color=15105570)
+    return "OK"
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
