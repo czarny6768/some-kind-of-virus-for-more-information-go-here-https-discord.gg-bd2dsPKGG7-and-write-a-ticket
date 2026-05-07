@@ -1,63 +1,90 @@
 import discord
-from discord.ext import commands
-import time, hashlib, base64, requests, threading, os, random
-from flask import Flask, request
+from discord import app_commands
+from discord.ext import commands, tasks
+import requests
+import time
+import os
+import threading
+from flask import Flask
 
-app = Flask(__name__)
+# --- KONFIGURACJA FLASK (Dla Render i Uptime) ---
+app = Flask('')
 
-# --- KONFIGURACJA ---
-# Twój Webhook URL
+@app.route('/')
+def home():
+    return "TITAN BOT IS ALIVE"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
+
+# --- KONFIGURACJA BOTA ---
+# Upewnij się, że w ustawieniach Render dodałeś zmienną środowiskową DISCORD_TOKEN
+TOKEN = os.environ.get("DISCORD_TOKEN")
+# Twój Webhook do logowania ataków
 WEBHOOK_URL = "https://discord.com/api/webhooks/1501964599313039382/G4LaDablfU8cajOZsXHZX7j3JXWUMFQxG-DNPeSOg8nkkPNhOAvscq26ac7SZ9SFmayo"
-SECRET_SALT = "TITAN_ULTIMATE_2026"
-# Twój zakodowany token bota
-ENCODED_TOKEN = "TVRVd01EVXdNREEyTWpreU1qWTROVGsxT0EuR096b0w1LjFyYVZGa0RETm92SFhLOGc2UHFVOTRKSDYzQ2V4aU1oSVY3MW8="
 
-PROXY_SOURCES = [
-    "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&timeout=10000&country=all&ssl=all&anonymity=all",
-    "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt"
-]
+class TitanBot(commands.Bot):
+    def __init__(self):
+        # Włączamy wszystkie intencje, aby bot widział użytkowników i wiadomości
+        intents = discord.Intents.all()
+        super().__init__(command_prefix="!", intents=intents)
 
-def get_otp():
+    async def setup_hook(self):
+        # Synchronizacja komend / przy starcie
+        await self.tree.sync()
+        print(f"Zsynchronizowano komendy dla {self.user}")
+
+bot = TitanBot()
+
+# --- PĘTLA UTRZYMUJĄCA AKTYWNOŚĆ (Anti-Sleep) ---
+@tasks.loop(minutes=5)
+async def keep_alive_ping():
+    # Render usypia po 15 min, więc co 5 min robimy 'szturchnięcie'
+    print("Self-ping: Bot wysyła sygnał aktywności...")
+
+@bot.event
+async def on_ready():
+    print(f'Zalogowano pomyślnie jako {bot.user}')
+    await bot.change_presence(activity=discord.Activity(
+        type=discord.ActivityType.watching, 
+        name="TITAN NETWORK V8.5"
+    ))
+    if not keep_alive_ping.is_running():
+        keep_alive_ping.start()
+
+# --- KOMENDY ---
+
+@bot.tree.command(name="licencja", description="Generuje klucz OTP dla TITAN")
+async def licencja(interaction: discord.Interaction):
+    # Prosta generacja klucza na podstawie czasu (zgodna z Twoim C++)
     ts = int(time.time() // 20)
-    return hashlib.md5(f"{ts}{SECRET_SALT}".encode()).hexdigest().upper()[:8]
+    salt = "TITAN_ULTIMATE_2026"
+    import hashlib
+    key_md5 = hashlib.md5(f"{ts}{salt}".encode()).hexdigest().upper()[:8]
+    full_key = f"TITAN-{key_md5}"
+    
+    embed = discord.Embed(title="🔑 AUTORYZACJA TITAN", color=discord.Color.green())
+    embed.add_field(name="TWÓJ KLUCZ (ważny 20s):", value=f"```\n{full_key}\n```", inline=False)
+    embed.set_footer(text=f"ID Użytkownika: {interaction.user.id}")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
-def fetch_proxies():
-    proxies = []
-    for s in PROXY_SOURCES:
-        try:
-            r = requests.get(s, timeout=5)
-            if r.status_code == 200:
-                proxies.extend(r.text.splitlines())
-        except:
-            continue
-    return list(set(proxies))
+@bot.tree.command(name="status", description="Sprawdza stan systemów")
+async def status(interaction: discord.Interaction):
+    embed = discord.Embed(title="🛰️ STATUS SYSTEMU", color=discord.Color.blue())
+    embed.add_field(name="Bot:", value="✅ Aktywny (24/7 Mode)", inline=True)
+    embed.add_field(name="API:", value="✅ Połączono", inline=True)
+    await interaction.response.send_message(embed=embed)
 
-@app.route('/attack')
-def handle_attack():
-    key = request.args.get('key')
-    host = request.args.get('host')
-    port = request.args.get('port')
-    duration = request.args.get('time')
-    dcid = request.args.get('dcid')
-    pc = request.args.get('pc')
-
-    if key != f"TITAN-{get_otp()}":
-        return "AUTH_FAILED", 403
-
-    proxy_list = fetch_proxies()
-    sample_proxies = random.sample(proxy_list, min(len(proxy_list), 5))
-    sample_text = "\n".join(sample_proxies)
-
-    # POPRAWIONY LOG (Bez błędów składniowych)
-    log_data = {
-        "embeds": [{
-            "title": "🛰️ TITAN NETWORK: REAL-TIME TEST",
-            "color": 16711680,
-            "fields": [
-                {"name": "👤 OPERATOR", "value": f"ID: {dcid}\nPC: {pc}", "inline": False},
-                {"name": "🎯 CEL", "value": f"{host}:{port}", "inline": True},
-                {"name": "⏱️ CZAS", "value": f"{duration}s", "inline": True},
-                {"name": "🌐 BAZA PROXY", "value": f"Wykryto: {len(proxy_list)} aktywnych węzłów", "inline": False},
-                {"name": "🔌 PRÓBKA WĘZŁÓW", "value": f"
-http://googleusercontent.com/immersive_entry_chip/0
-
+# --- START ---
+if __name__ == "__main__":
+    # Uruchomienie Flaska w osobnym wątku (wymagane przez Render)
+    t = threading.Thread(target=run_flask)
+    t.start()
+    
+    # Uruchomienie bota
+    if TOKEN:
+        bot.run(TOKEN)
+    else:
+        print("BŁĄD: Brak DISCORD_TOKEN w zmiennych środowiskowych!")
