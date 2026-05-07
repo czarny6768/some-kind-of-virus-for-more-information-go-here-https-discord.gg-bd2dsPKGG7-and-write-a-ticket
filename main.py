@@ -2,28 +2,29 @@ import os
 import discord
 from discord import app_commands
 from discord.ext import commands
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import threading
 import uuid
 import time
-from datetime import datetime, timedelta
 
 # --- KONFIGURACJA ---
-TOKEN = "TWÓJ_TOKEN_BOTA"
+TOKEN = "TWÓJ_TOKEN_BOTA"  # <--- WKLEJ TUTAJ SWÓJ TOKEN
 app = Flask(__name__)
 
-# ID RÓL I ICH LIMITY
+# ID RÓL I LIMITY (Poprawione na Twoje ID)
 ROLE_CONFIG = {
     1500513889064980661: {"name": "Zwykły Customer", "limit": 5},
     1500535408147173457: {"name": "Pro Customer", "limit": 10},
-    1500535548438253771: {"name": "Customer Master", "limit": float('inf')} # Nieskończoność
+    1500535548438253771: {"name": "Customer Master", "limit": float('inf')}
 }
 
-# Baza danych w pamięci
-valid_licenses = {"TITAN-ADMIN-123": None}
-# Słownik do śledzenia użyć: {user_id: [lista_timestampów]}
-user_usage = {}
+# BAZA DANYCH W PAMIĘCI
+valid_licenses = {"TITAN-ADMIN-123": None} # Klucze : HWID
+user_usage = {}      # user_id : [lista czasów użycia]
+blacklisted_hwids = []
+blacklisted_hosts = ["google.com", "gov.pl"] # Przykładowe blokady
 
+# --- BOT SETUP ---
 class TitanBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -32,85 +33,90 @@ class TitanBot(commands.Bot):
 
     async def setup_hook(self):
         await self.tree.sync()
-        print(f"Zsynchronizowano komendy dla {self.user}")
+        print(f"✅ Bot Titan zalogowany jako {self.user}")
 
 bot = TitanBot()
 
-# --- HELPER: SPRAWDZANIE LIMITU ---
-def check_limit(user):
-    user_id = user.id
-    current_time = time.time()
-    
-    # Znajdź najwyższą rolę użytkownika i przypisz limit
-    user_limit = -1
+# --- FUNKCJE POMOCNICZE ---
+def get_user_limit(user):
+    max_limit = -1
     for role in user.roles:
         if role.id in ROLE_CONFIG:
-            # Wybieramy najwyższy dostępny limit z posiadanych ról
-            new_limit = ROLE_CONFIG[role.id]["limit"]
-            if new_limit > user_limit:
-                user_limit = new_limit
+            l = ROLE_CONFIG[role.id]["limit"]
+            if l == float('inf'): return float('inf')
+            if l > max_limit: max_limit = l
+    return max_limit
 
-    if user_limit == -1:
-        return False, "Brak uprawnień (nie masz odpowiedniej roli)."
-
-    if user_limit == float('inf'):
-        return True, user_limit
-
-    # Usuń wpisy starsze niż 24h
-    if user_id not in user_usage:
-        user_usage[user_id] = []
-    
-    user_usage[user_id] = [t for t in user_usage[user_id] if current_time - t < 86400]
-
-    if len(user_usage[user_id]) >= user_limit:
-        # Oblicz za ile czasu zwolni się pierwszy slot
-        wait_time = int((user_usage[user_id][0] + 86400) - current_time)
-        hours = wait_time // 3600
-        minutes = (wait_time % 3600) // 60
-        return False, f"Osiągnąłeś limit 24h! Następny klucz dostępny za: {hours}h {minutes}m."
-
-    return True, user_limit
-
-# --- CZĘŚĆ: SERWER DLA .EXE (Flask) ---
+# --- TRASY SERWERA DLA .EXE ---
 @app.route('/auth')
 def auth():
     key = request.args.get('key')
     hwid = request.args.get('hwid')
+    
+    if hwid in blacklisted_hwids: return "BLACKLISTED_HWID"
     if key not in valid_licenses: return "INVALID_KEY"
+    
     if valid_licenses[key] is None:
         valid_licenses[key] = hwid
-        return "SUCCESS|USER"
-    return "SUCCESS|USER" if valid_licenses[key] == hwid else "HWID_MISMATCH"
+        return "SUCCESS|REGISTERED"
+    
+    return "SUCCESS|LOGGED" if valid_licenses[key] == hwid else "HWID_MISMATCH"
 
-# --- CZĘŚĆ: BOT DISCORD ---
-@bot.tree.command(name="licencja", description="Generuje klucz z uwzględnieniem Twojego limitu")
+@app.route('/check_target')
+def check_target():
+    target = request.args.get('host')
+    if target in blacklisted_hosts:
+        return "BLOCKED"
+    return "ALLOWED"
+
+# --- KOMENDY DISCORD ---
+
+@bot.tree.command(name="licencja", description="Generuje klucz licencji")
 async def licencja(interaction: discord.Interaction):
-    can_gen, result = check_limit(interaction.user)
-
-    if not can_gen:
-        await interaction.response.send_message(f"❌ {result}", ephemeral=True)
+    limit = get_user_limit(interaction.user)
+    
+    if limit == -1:
+        await interaction.response.send_message("❌ Nie masz uprawnień! Musisz mieć odpowiednią rolę klienta.", ephemeral=True)
         return
 
-    # Generowanie
+    # Logika limitu 24h
+    if limit != float('inf'):
+        now = time.time()
+        uid = interaction.user.id
+        user_usage[uid] = [t for t in user_usage.get(uid, []) if now - t < 86400]
+        if len(user_usage[uid]) >= limit:
+            await interaction.response.send_message(f"❌ Osiągnąłeś limit {limit} kluczy na 24h!", ephemeral=True)
+            return
+        user_usage[uid].append(now)
+
     new_key = "TITAN-" + str(uuid.uuid4()).upper()[:8]
     valid_licenses[new_key] = None
     
-    # Zapisz użycie (chyba że master)
-    if result != float('inf'):
-        user_usage[interaction.user.id].append(time.time())
+    emb = discord.Embed(title="🛡️ TITAN AUTH", color=0x00FF7F)
+    emb.add_field(name="TWÓJ KLUCZ", value=f"`{new_key}`", inline=False)
+    emb.set_footer(text="Klucz jest jednorazowy i przypisany do Twojego HWID.")
+    await interaction.response.send_message(embed=emb, ephemeral=True)
 
-    count = "∞" if result == float('inf') else f"{len(user_usage[interaction.user.id])}/{result}"
-
-    embed = discord.Embed(title="✅ Licencja Wygenerowana", color=0x00FF7F)
-    embed.add_field(name="Klucz", value=f"`{new_key}`", inline=False)
-    embed.add_field(name="Użycie 24h", value=f"`{count}`", inline=True)
-    embed.set_footer(text="Klucz jest jednorazowy i przypisuje się do HWID.")
+@bot.tree.command(name="bl", description="Blokuje HWID lub Stronę")
+@app_commands.choices(typ=[
+    app_commands.Choice(name="HWID (Komputer)", value="hwid"),
+    app_commands.Choice(name="HOST (Strona/IP)", value="host")
+])
+async def bl(interaction: discord.Interaction, typ: str, wartosc: str):
+    # Tutaj możesz dodać sprawdzanie, czy tylko ADMIN może użyć /bl
+    if typ == "hwid":
+        blacklisted_hwids.append(wartosc)
+        msg = f"🚫 Zablokowano HWID: `{wartosc}`"
+    else:
+        blacklisted_hosts.append(wartosc.lower())
+        msg = f"🚫 Dodano stronę `{wartosc}` do listy zakazanych celów."
     
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(msg)
 
+# --- URUCHAMIANIE ---
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
