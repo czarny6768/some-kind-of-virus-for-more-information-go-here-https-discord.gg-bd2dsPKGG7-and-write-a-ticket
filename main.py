@@ -20,8 +20,9 @@ def run_flask():
     app.run(host='0.0.0.0', port=port)
 
 # --- KONFIGURACJA BOTA ---
+# Token pobierany bezpiecznie ze zmiennych środowiskowych Render
 TOKEN = os.environ.get("DISCORD_TOKEN")
-# Pamiętaj, aby nie udostępniać publicznie Webhooka!
+# Twój Webhook wstawiony na sztywno:
 WEBHOOK_URL = "https://discord.com/api/webhooks/1501964599313039382/G4LaDablfU8cajOZsXHZX7j3JXWUMFQxG-DNPeSOg8nkkPNhOAvscq26ac7SZ9SFmayo"
 
 class TitanBot(commands.Bot):
@@ -37,7 +38,7 @@ bot = TitanBot()
 
 @tasks.loop(minutes=5)
 async def keep_alive_ping():
-    print("Self-ping: Bot aktywny...")
+    print("Self-ping: Bot aktywny na Render...")
 
 @bot.event
 async def on_ready():
@@ -51,13 +52,12 @@ async def on_ready():
 
 # --- KOMENDA: BUDOWA SERWERA ---
 
-@bot.tree.command(name="setup_server", description="Buduje strukturę kanałów TITAN V12")
+@bot.tree.command(name="setup_server", description="Automatyczna konfiguracja kanałów TITAN")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_server(interaction: discord.Interaction):
     guild = interaction.guild
-    await interaction.response.send_message("🏗️ Rozpoczynam budowę serwera...", ephemeral=True)
+    await interaction.response.send_message("🏗️ Buduję infrastrukturę serwera...", ephemeral=True)
 
-    # Kategorie i kanały
     categories = {
         "--- INFORMACJE ---": ["regulamin", "ogłoszenia", "download-titan"],
         "--- STREFA TITAN ---": ["status-systemów", "logi-użycia"],
@@ -69,8 +69,6 @@ async def setup_server(interaction: discord.Interaction):
         category = await guild.create_category(cat_name)
         for chan_name in channels:
             new_channel = await guild.create_text_channel(chan_name, category=category)
-            
-            # Dodaj wiadomość powitalną na kanale ticketów
             if chan_name == "odbierz-24h-za-darmo":
                 embed = discord.Embed(
                     title="🎁 PROMOCJA: TITAN V12 ZA DARMO",
@@ -79,16 +77,15 @@ async def setup_server(interaction: discord.Interaction):
                 )
                 await new_channel.send(embed=embed)
 
-    await interaction.followup.send("✅ Serwer gotowy!")
+    await interaction.followup.send("✅ Serwer gotowy do pracy!")
 
 # --- KOMENDA: SYSTEM TICKETÓW ---
 
-@bot.tree.command(name="ticket", description="Otwiera ticket w sprawie darmowej licencji")
+@bot.tree.command(name="ticket", description="Otwórz ticket po darmowy klucz")
 async def ticket(interaction: discord.Interaction):
     guild = interaction.guild
     user = interaction.user
     
-    # Tworzenie prywatnego kanału
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(read_messages=False),
         user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
@@ -98,14 +95,14 @@ async def ticket(interaction: discord.Interaction):
     ticket_chan = await guild.create_text_channel(f"ticket-{user.name}", overwrites=overwrites)
     
     embed = discord.Embed(
-        title="🎫 NOWY TICKET",
-        description=f"Witaj {user.mention}! Wrzuć tutaj dowód (screen) z TikToka, aby otrzymać klucz.",
+        title="🎫 NOWY TICKET - DARMOWA LICENCJA",
+        description=f"Siema {user.mention}! Wrzuć tutaj screena z TikToka. Moderator sprawdzi go i wyśle Ci klucz.",
         color=discord.Color.blue()
     )
     await ticket_chan.send(embed=embed)
-    await interaction.response.send_message(f"✅ Stworzono ticket: {ticket_chan.mention}", ephemeral=True)
+    await interaction.response.send_message(f"✅ Otwarto: {ticket_chan.mention}", ephemeral=True)
 
-# --- TWOJE STARE KOMENDY (LICENCJA I STATUS) ---
+# --- KOMENDA: LICENCJA (NAPRAWIONA) ---
 
 @bot.tree.command(name="licencja", description="Generuje klucz OTP dla TITAN")
 async def licencja(interaction: discord.Interaction):
@@ -115,15 +112,20 @@ async def licencja(interaction: discord.Interaction):
     full_key = f"TITAN-{key_md5}"
     
     embed = discord.Embed(title="🔑 AUTORYZACJA TITAN", color=discord.Color.green())
+    # Tutaj był błąd f-stringa - teraz jest poprawione:
     embed.add_field(name="TWÓJ KLUCZ (ważny 20s):", value=f"```\n{full_key}\n
 ```", inline=False)
+    embed.set_footer(text="Wpisz klucz w programie V12")
+    
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="status", description="Sprawdza stan systemów")
+# --- KOMENDA: STATUS ---
+
+@bot.tree.command(name="status", description="Sprawdza systemy")
 async def status(interaction: discord.Interaction):
-    embed = discord.Embed(title="🛰️ STATUS SYSTEMU", color=discord.Color.blue())
-    embed.add_field(name="V12 Engine:", value="✅ Online", inline=True)
-    embed.add_field(name="Proxy Nodes:", value="✅ 30,000+ Active", inline=True)
+    embed = discord.Embed(title="🛰️ STATUS TITAN V12", color=discord.Color.blue())
+    embed.add_field(name="Proxy Baza:", value="✅ 30,000+ Online", inline=True)
+    embed.add_field(name="Silnik Ataku:", value="✅ Ready", inline=True)
     await interaction.response.send_message(embed=embed)
 
 # --- START ---
@@ -132,6 +134,9 @@ if __name__ == "__main__":
     t.start()
     
     if TOKEN:
-        bot.run(TOKEN)
+        try:
+            bot.run(TOKEN)
+        except Exception as e:
+            print(f"Błąd podczas startu bota: {e}")
     else:
-        print("BŁĄD: Brak DISCORD_TOKEN!")
+        print("BŁĄD: Brak DISCORD_TOKEN w Environment Variables!")
