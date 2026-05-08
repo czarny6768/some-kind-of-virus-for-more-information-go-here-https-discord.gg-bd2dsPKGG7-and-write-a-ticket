@@ -7,7 +7,6 @@ import threading
 import hashlib
 from flask import Flask
 
-# --- KONFIGURACJA FLASK ---
 app = Flask('')
 
 @app.route('/')
@@ -18,7 +17,6 @@ def run_flask():
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
 
-# --- KONFIGURACJA BOTA ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
 class TitanBot(commands.Bot):
@@ -35,80 +33,102 @@ bot = TitanBot()
 @bot.event
 async def on_ready():
     print(f'Zalogowano jako {bot.user}')
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="TITAN V12"))
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="TITAN V12 | 5 Months of Dev"))
 
-# --- KOMENDA: FULL SETUP SERWERA ---
+# --- KOMENDA: MEGA SETUP ---
 
-@bot.tree.command(name="setup_server", description="Buduje kompletny serwer TITAN V12")
+@bot.tree.command(name="setup_server", description="Buduje kompletny serwer z podziałem ogłoszeń")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_server(interaction: discord.Interaction):
     guild = interaction.guild
-    await interaction.response.send_message("🏗️ Generowanie profesjonalnego serwera...", ephemeral=True)
+    await interaction.response.send_message("🛠️ Buduję profesjonalną strukturę serwera...", ephemeral=True)
 
-    # 1. Tworzenie rangi Customer (jeśli nie istnieje)
-    customer_role = discord.utils.get(guild.roles, name="Customer")
-    if not customer_role:
-        customer_role = await guild.create_role(name="Customer", color=discord.Color.blue(), hoist=True)
+    # 1. Rangi
+    customer_role = discord.utils.get(guild.roles, name="Customer") or await guild.create_role(name="Customer", color=discord.Color.blue(), hoist=True)
+    admin_role = discord.utils.get(guild.roles, name="Admin") or await guild.create_role(name="Admin", color=discord.Color.red(), hoist=True)
 
-    # 2. Kategorie i kanały
+    # 2. Kanał Weryfikacja
+    await guild.create_text_channel("🛡️┃weryfikacja")
+
+    # 3. Kategorie i kanały
     
-    # --- INFO ---
-    cat_info = await guild.create_category("━━ INFO ━━")
-    ch_reg = await guild.create_text_channel("📜┃regulamin", category=cat_info)
-    ch_ann = await guild.create_text_channel("📢┃ogłoszenia", category=cat_info)
+    # --- INFO & PUBLIC ---
+    cat_info = await guild.create_category("━━━ INFO ━━━")
+    ch_desc = await guild.create_text_channel("🚀┃opis-projektu", category=cat_info)
+    ch_ann_pub = await guild.create_text_channel("📢┃ogłoszenia-ogólne", category=cat_info)
     ch_price = await guild.create_text_channel("💎┃cennik", category=cat_info)
+    ch_vouch = await guild.create_text_channel("✅┃vouch-dowody", category=cat_info)
 
-    # --- DLA KLIENTÓW (Tylko dla rangi Customer) ---
+    # --- USŁUGI ---
+    cat_services = await guild.create_category("━━━ SERVICES ━━━")
+    await guild.create_text_channel("🔒┃locker-ransom", category=cat_services)
+    await guild.create_text_channel("🦠┃custom-malware", category=cat_services)
+    await guild.create_text_channel("💀┃stealer-setup", category=cat_services)
+
+    # --- CUSTOMER ZONE (Tylko dla Rangi Customer) ---
     overwrites_cust = {
         guild.default_role: discord.PermissionOverwrite(read_messages=False),
-        customer_role: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        customer_role: discord.PermissionOverwrite(read_messages=True, send_messages=False)
     }
-    cat_cust = await guild.create_category("━━ CUSTOMER ZONE ━━", overwrites=overwrites_cust)
-    await guild.create_text_channel("📥┃pobierz-titan", category=cat_cust)
+    cat_cust = await guild.create_category("━━━ CUSTOMER ZONE ━━━", overwrites=overwrites_cust)
+    await guild.create_text_channel("📢┃ogłoszenia-klient", category=cat_cust)
+    await guild.create_text_channel("📥┃download-titan", category=cat_cust)
     await guild.create_text_channel("🔑┃generuj-klucz", category=cat_cust)
     await guild.create_text_channel("💬┃czat-vip", category=cat_cust)
 
-    # --- WSPARCIE ---
-    cat_supp = await guild.create_category("━━ SUPPORT ━━")
-    ch_tick = await guild.create_text_channel("🎫┃odbierz-dostęp", category=cat_supp)
+    # --- ADMIN PANEL ---
+    overwrites_admin = {
+        guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        admin_role: discord.PermissionOverwrite(read_messages=True)
+    }
+    cat_admin = await guild.create_category("━━━ ADMIN PANEL ━━━", overwrites=overwrites_admin)
+    await guild.create_text_channel("🔒┃admin-chat", category=cat_admin)
 
-    # 3. Wysyłanie gotowych treści (Embedy)
+    # --- SUPPORT ---
+    cat_supp = await guild.create_category("━━━ SUPPORT ━━━")
+    await guild.create_text_channel("🎫┃otwórz-ticket", category=cat_supp)
 
-    # Embed Cennik
-    embed_p = discord.Embed(title="💎 CENNIK TITAN V12", color=discord.Color.gold())
-    embed_p.add_field(name="TITAN 24H", value="`FREE` (Zrób zadanie na TikToku)", inline=False)
-    embed_p.add_field(name="TITAN WEEKLY", value="`20 PLN / 5 EUR`", inline=False)
-    embed_p.add_field(name="TITAN LIFETIME", value="`60 PLN / 15 EUR` (Best Deal!)", inline=False)
-    embed_p.set_footer(text="Płatności: PSC, BLIK, PayPal, Crypto")
+    # 4. Wysyłanie Treści (Embedy)
+
+    # Opis projektu
+    embed_desc = discord.Embed(title="🚀 TITAN NETWORK V12 - O PROJEKCIE", color=discord.Color.blue())
+    embed_desc.description = (
+        "**TITAN V12** to owoc **5 miesięcy pracy** deweloperów.\n\n"
+        "🟢 **Baza Proxy:** 30,000+ aktywnych węzłów Ghost-Proxy.\n"
+        "🟢 **Technologia:** Działanie w RAM (Ghost-Mode), brak śladów na dysku.\n"
+        "🟢 **Status:** Najwyższy poziom niewykrywalności (FUD)."
+    )
+    await ch_desc.send(embed=embed_desc)
+
+    # Powitanie w Ogłoszeniach Publicznych
+    await ch_ann_pub.send("🔔 **Witaj w ogłoszeniach ogólnych!** Tutaj znajdziesz info o promocjach i nowych usługach.")
+
+    # 5. Cennik
+    embed_p = discord.Embed(title="💎 CENNIK", color=discord.Color.gold())
+    embed_p.add_field(name="Titan 24H", value="`FREE` (Zrób zadanie)", inline=False)
+    embed_p.add_field(name="Custom Locker", value="`od 100 PLN`", inline=False)
     await ch_price.send(embed=embed_p)
 
-    # Embed Ticket
-    embed_t = discord.Embed(title="🎫 ZAKUP LUB DARMOWY DOSTĘP", 
-                          description="Otwórz ticket wpisując `/ticket`, aby:\n- Wysłać dowód z TikToka (Free 24h)\n- Kupić wersję Premium", 
-                          color=discord.Color.green())
-    await ch_tick.send(embed=embed_t)
-
-    await interaction.followup.send("✅ Serwer skonfigurowany pomyślnie!")
+    await interaction.followup.send("✅ Serwer TITAN ze strefą Customer został zbudowany!")
 
 # --- POZOSTAŁE KOMENDY ---
 
-@bot.tree.command(name="licencja", description="Generuje klucz (Dla Customer)")
+@bot.tree.command(name="licencja", description="Generuje klucz (Dla Klientów)")
 async def licencja(interaction: discord.Interaction):
     ts = int(time.time() // 20)
     key = hashlib.md5(f"{ts}TITAN_ULTIMATE_2026".encode()).hexdigest().upper()[:8]
     await interaction.response.send_message(f"🔑 Twój klucz: `TITAN-{key}`", ephemeral=True)
 
-@bot.tree.command(name="ticket", description="Otwiera ticket wsparcia")
+@bot.tree.command(name="ticket", description="Otwiera ticket")
 async def ticket(interaction: discord.Interaction):
     overwrites = {
-        interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False), 
         interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
     }
     chan = await interaction.guild.create_text_channel(f"ticket-{interaction.user.name}", overwrites=overwrites)
-    await chan.send(f"Witaj {interaction.user.mention}! Opisz swoją sprawę lub wrzuć screena.")
-    await interaction.response.send_message(f"✅ Ticket otwarty: {chan.mention}", ephemeral=True)
+    await chan.send(f"Witaj {interaction.user.mention}! Opisz swoją sprawę.")
+    await interaction.response.send_message(f"✅ Ticket: {chan.mention}", ephemeral=True)
 
-# --- START ---
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
     if TOKEN:
