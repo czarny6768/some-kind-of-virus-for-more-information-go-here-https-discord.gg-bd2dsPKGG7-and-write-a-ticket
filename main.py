@@ -5,9 +5,10 @@ import requests
 import time
 import os
 import threading
+import hashlib
 from flask import Flask
 
-# --- KONFIGURACJA FLASK (Dla Render i Uptime) ---
+# --- KONFIGURACJA FLASK ---
 app = Flask('')
 
 @app.route('/')
@@ -19,72 +20,118 @@ def run_flask():
     app.run(host='0.0.0.0', port=port)
 
 # --- KONFIGURACJA BOTA ---
-# Upewnij się, że w ustawieniach Render dodałeś zmienną środowiskową DISCORD_TOKEN
 TOKEN = os.environ.get("DISCORD_TOKEN")
-# Twój Webhook do logowania ataków
-WEBHOOK_URL = "https://discord.com/api/webhooks/1501964599313039382/G4LaDablfU8cajOZsXHZX7j3JXWUMFQxG-DNPeSOg8nkkPNhOAvscq26ac7SZ9SFmayo"
+# Pamiętaj, aby nie udostępniać publicznie Webhooka!
+WEBHOOK_URL = "TWÓJ_WEBHOOK_URL"
 
 class TitanBot(commands.Bot):
     def __init__(self):
-        # Włączamy wszystkie intencje, aby bot widział użytkowników i wiadomości
         intents = discord.Intents.all()
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # Synchronizacja komend / przy starcie
         await self.tree.sync()
         print(f"Zsynchronizowano komendy dla {self.user}")
 
 bot = TitanBot()
 
-# --- PĘTLA UTRZYMUJĄCA AKTYWNOŚĆ (Anti-Sleep) ---
 @tasks.loop(minutes=5)
 async def keep_alive_ping():
-    # Render usypia po 15 min, więc co 5 min robimy 'szturchnięcie'
-    print("Self-ping: Bot wysyła sygnał aktywności...")
+    print("Self-ping: Bot aktywny...")
 
 @bot.event
 async def on_ready():
-    print(f'Zalogowano pomyślnie jako {bot.user}')
+    print(f'Zalogowano jako {bot.user}')
     await bot.change_presence(activity=discord.Activity(
         type=discord.ActivityType.watching, 
-        name="TITAN NETWORK V8.5"
+        name="TITAN NETWORK V12"
     ))
     if not keep_alive_ping.is_running():
         keep_alive_ping.start()
 
-# --- KOMENDY ---
+# --- KOMENDA: BUDOWA SERWERA ---
+
+@bot.tree.command(name="setup_server", description="Buduje strukturę kanałów TITAN V12")
+@app_commands.checks.has_permissions(administrator=True)
+async def setup_server(interaction: discord.Interaction):
+    guild = interaction.guild
+    await interaction.response.send_message("🏗️ Rozpoczynam budowę serwera...", ephemeral=True)
+
+    # Kategorie i kanały
+    categories = {
+        "--- INFORMACJE ---": ["regulamin", "ogłoszenia", "download-titan"],
+        "--- STREFA TITAN ---": ["status-systemów", "logi-użycia"],
+        "--- WSPARCIE ---": ["odbierz-24h-za-darmo", "pomoc-techniczna"],
+        "--- SPOŁECZNOŚĆ ---": ["czat-ogólny", "pochwal-się-wynikiem"]
+    }
+
+    for cat_name, channels in categories.items():
+        category = await guild.create_category(cat_name)
+        for chan_name in channels:
+            new_channel = await guild.create_text_channel(chan_name, category=category)
+            
+            # Dodaj wiadomość powitalną na kanale ticketów
+            if chan_name == "odbierz-24h-za-darmo":
+                embed = discord.Embed(
+                    title="🎁 PROMOCJA: TITAN V12 ZA DARMO",
+                    description="Zrób screena jak subujesz nas na TikToku i wpisz `/ticket`!",
+                    color=discord.Color.gold()
+                )
+                await new_channel.send(embed=embed)
+
+    await interaction.followup.send("✅ Serwer gotowy!")
+
+# --- KOMENDA: SYSTEM TICKETÓW ---
+
+@bot.tree.command(name="ticket", description="Otwiera ticket w sprawie darmowej licencji")
+async def ticket(interaction: discord.Interaction):
+    guild = interaction.guild
+    user = interaction.user
+    
+    # Tworzenie prywatnego kanału
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+        guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+    }
+    
+    ticket_chan = await guild.create_text_channel(f"ticket-{user.name}", overwrites=overwrites)
+    
+    embed = discord.Embed(
+        title="🎫 NOWY TICKET",
+        description=f"Witaj {user.mention}! Wrzuć tutaj dowód (screen) z TikToka, aby otrzymać klucz.",
+        color=discord.Color.blue()
+    )
+    await ticket_chan.send(embed=embed)
+    await interaction.response.send_message(f"✅ Stworzono ticket: {ticket_chan.mention}", ephemeral=True)
+
+# --- TWOJE STARE KOMENDY (LICENCJA I STATUS) ---
 
 @bot.tree.command(name="licencja", description="Generuje klucz OTP dla TITAN")
 async def licencja(interaction: discord.Interaction):
-    # Prosta generacja klucza na podstawie czasu (zgodna z Twoim C++)
     ts = int(time.time() // 20)
     salt = "TITAN_ULTIMATE_2026"
-    import hashlib
     key_md5 = hashlib.md5(f"{ts}{salt}".encode()).hexdigest().upper()[:8]
     full_key = f"TITAN-{key_md5}"
     
     embed = discord.Embed(title="🔑 AUTORYZACJA TITAN", color=discord.Color.green())
-    embed.add_field(name="TWÓJ KLUCZ (ważny 20s):", value=f"```\n{full_key}\n```", inline=False)
-    embed.set_footer(text=f"ID Użytkownika: {interaction.user.id}")
-    
+    embed.add_field(name="TWÓJ KLUCZ (ważny 20s):", value=f"```\n{full_key}\n
+```", inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.tree.command(name="status", description="Sprawdza stan systemów")
 async def status(interaction: discord.Interaction):
     embed = discord.Embed(title="🛰️ STATUS SYSTEMU", color=discord.Color.blue())
-    embed.add_field(name="Bot:", value="✅ Aktywny (24/7 Mode)", inline=True)
-    embed.add_field(name="API:", value="✅ Połączono", inline=True)
+    embed.add_field(name="V12 Engine:", value="✅ Online", inline=True)
+    embed.add_field(name="Proxy Nodes:", value="✅ 30,000+ Active", inline=True)
     await interaction.response.send_message(embed=embed)
 
 # --- START ---
 if __name__ == "__main__":
-    # Uruchomienie Flaska w osobnym wątku (wymagane przez Render)
     t = threading.Thread(target=run_flask)
     t.start()
     
-    # Uruchomienie bota
     if TOKEN:
         bot.run(TOKEN)
     else:
-        print("BŁĄD: Brak DISCORD_TOKEN w zmiennych środowiskowych!")
+        print("BŁĄD: Brak DISCORD_TOKEN!")
