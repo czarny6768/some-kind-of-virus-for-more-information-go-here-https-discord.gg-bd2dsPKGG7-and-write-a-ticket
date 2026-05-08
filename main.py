@@ -22,7 +22,7 @@ def run_flask():
 # --- KONFIGURACJA BOTA ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 # Pamiętaj, aby nie udostępniać publicznie Webhooka!
-WEBHOOK_URL = "TWÓJ_WEBHOOK_URL"
+WEBHOOK_URL = "https://discord.com/api/webhooks/1501964599313039382/G4LaDablfU8cajOZsXHZX7j3JXWUMFQxG-DNPeSOg8nkkPNhOAvscq26ac7SZ9SFmayo"
 
 class TitanBot(commands.Bot):
     def __init__(self):
