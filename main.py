@@ -7,16 +7,18 @@ import threading
 import hashlib
 from flask import Flask
 
+# --- KONFIGURACJA FLASK ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "TITAN BOT ONLINE"
+    return "TITAN BOT SYSTEM ONLINE"
 
 def run_flask():
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
 
+# --- KONFIGURACJA BOTA ---
 TOKEN = os.environ.get("DISCORD_TOKEN")
 
 class TitanBot(commands.Bot):
@@ -26,90 +28,88 @@ class TitanBot(commands.Bot):
 
     async def setup_hook(self):
         await self.tree.sync()
-        print(f"Zsynchronizowano komendy slash.")
 
 bot = TitanBot()
 
 @bot.event
 async def on_ready():
     print(f'Zalogowano jako {bot.user}')
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="TITAN V12 | 5 Months of Dev"))
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="TITAN V12 | Professional Setup"))
 
-# --- KOMENDA: MEGA SETUP ---
+# --- KOMENDA BUDOWANIA ---
 
-@bot.tree.command(name="setup_server", description="Buduje kompletny serwer z podziałem ogłoszeń")
+@bot.tree.command(name="setup_server_full", description="Buduje cały serwer z opisami na każdym kanale")
 @app_commands.checks.has_permissions(administrator=True)
-async def setup_server(interaction: discord.Interaction):
+async def setup_server_full(interaction: discord.Interaction):
     guild = interaction.guild
-    await interaction.response.send_message("🛠️ Buduję profesjonalną strukturę serwera...", ephemeral=True)
+    await interaction.response.send_message("🏗️ Buduję profesjonalny serwer z pełną informacją...", ephemeral=True)
 
     # 1. Rangi
     customer_role = discord.utils.get(guild.roles, name="Customer") or await guild.create_role(name="Customer", color=discord.Color.blue(), hoist=True)
     admin_role = discord.utils.get(guild.roles, name="Admin") or await guild.create_role(name="Admin", color=discord.Color.red(), hoist=True)
 
-    # 2. Kanał Weryfikacja
-    await guild.create_text_channel("🛡️┃weryfikacja")
+    # Funkcja pomocnicza do wysyłania Info-Embedów
+    async def send_info(channel, title, desc):
+        embed = discord.Embed(title=title, description=desc, color=discord.Color.blue())
+        embed.set_footer(text="System Informacyjny TITAN V12")
+        await channel.send(embed=embed)
 
-    # 3. Kategorie i kanały
+    # --- KATEGORIE I KANAŁY ---
+
+    # 🛡️ WERYFIKACJA
+    ch_ver = await guild.create_text_channel("🛡️┃weryfikacja")
+    await send_info(ch_ver, "🛡️ SYSTEM WERYFIKACJI", "Przeczytaj regulamin i czekaj na nadanie rangi przez Administratora lub użyj przycisku (jeśli dodasz bota do weryfikacji).")
+
+    # ━━━ INFO ━━━
+    cat_info = await guild.create_category("━━━ INFORMACJE ━━━")
     
-    # --- INFO & PUBLIC ---
-    cat_info = await guild.create_category("━━━ INFO ━━━")
     ch_desc = await guild.create_text_channel("🚀┃opis-projektu", category=cat_info)
-    ch_ann_pub = await guild.create_text_channel("📢┃ogłoszenia-ogólne", category=cat_info)
+    await send_info(ch_desc, "🚀 O PROJEKCIE", "**TITAN V12** to efekt 5 miesięcy prac. Posiadamy 30,000+ proxy i technologię Ghost-Mode (RAM-only).")
+    
+    ch_ann = await guild.create_text_channel("📢┃ogłoszenia-ogólne", category=cat_info)
+    await send_info(ch_ann, "📢 OGŁOSZENIA", "Tutaj znajdziesz najważniejsze informacje dotyczące przerw technicznych i aktualizacji dla wszystkich.")
+    
     ch_price = await guild.create_text_channel("💎┃cennik", category=cat_info)
+    await send_info(ch_price, "💎 CENNIK USŁUG", "• Titan V12 (LIFE): 70 PLN\n• Custom Locker: od 100 PLN\n• FUD Malware: od 150 PLN")
+    
     ch_vouch = await guild.create_text_channel("✅┃vouch-dowody", category=cat_info)
+    await send_info(ch_vouch, "✅ VOUCH / DOWODY", "Tutaj publikujemy potwierdzenia transakcji i opinie klientów. Możesz tu wrzucić swojego voucha po zakupie!")
 
-    # --- USŁUGI ---
-    cat_services = await guild.create_category("━━━ SERVICES ━━━")
-    await guild.create_text_channel("🔒┃locker-ransom", category=cat_services)
-    await guild.create_text_channel("🦠┃custom-malware", category=cat_services)
-    await guild.create_text_channel("💀┃stealer-setup", category=cat_services)
+    # ━━━ USŁUGI ━━━
+    cat_serv = await guild.create_category("━━━ USŁUGI PREMIUM ━━━")
+    
+    ch_lock = await guild.create_text_channel("🔒┃locker-ransom", category=cat_serv)
+    await send_info(ch_lock, "🔒 LOCKER / RANSOMWARE", "Usługa tworzenia spersonalizowanych lockerów. Pełne wsparcie i konfiguracja panelu.")
+    
+    ch_mal = await guild.create_text_channel("🦠┃custom-malware", category=cat_serv)
+    await send_info(ch_mal, "🦠 CUSTOM MALWARE", "Tworzymy oprogramowanie pod specjalne zamówienie. Pełen FUD i niewykrywalność.")
 
-    # --- CUSTOMER ZONE (Tylko dla Rangi Customer) ---
-    overwrites_cust = {
-        guild.default_role: discord.PermissionOverwrite(read_messages=False),
-        customer_role: discord.PermissionOverwrite(read_messages=True, send_messages=False)
-    }
-    cat_cust = await guild.create_category("━━━ CUSTOMER ZONE ━━━", overwrites=overwrites_cust)
-    await guild.create_text_channel("📢┃ogłoszenia-klient", category=cat_cust)
-    await guild.create_text_channel("📥┃download-titan", category=cat_cust)
-    await guild.create_text_channel("🔑┃generuj-klucz", category=cat_cust)
-    await guild.create_text_channel("💬┃czat-vip", category=cat_cust)
+    # ━━━ STREFA VIP (Customer) ━━━
+    over_cust = {guild.default_role: discord.PermissionOverwrite(read_messages=False), customer_role: discord.PermissionOverwrite(read_messages=True)}
+    cat_vip = await guild.create_category("━━━ STREFA VIP ━━━", overwrites=over_cust)
+    
+    ch_ann_vip = await guild.create_text_channel("📢┃ogłoszenia-klient", category=cat_vip)
+    await send_info(ch_ann_vip, "👑 VIP ANNOUNCEMENTS", "Ekskluzywne informacje o nowych funkcjach i aktualizacjach proxy tylko dla klientów.")
+    
+    ch_down = await guild.create_text_channel("📥┃pobierz-titan", category=cat_vip)
+    await send_info(ch_down, "📥 POBIERANIE", "Tutaj zawsze znajdziesz najnowszą, bezpieczną wersję TITAN V12.")
+    
+    ch_key = await guild.create_text_channel("🔑┃generuj-licencje", category=cat_vip)
+    await send_info(ch_key, "🔑 GENERATOR", "Wpisz `/licencja`, aby wygenerować swój unikalny klucz do programu.")
 
-    # --- ADMIN PANEL ---
-    overwrites_admin = {
-        guild.default_role: discord.PermissionOverwrite(read_messages=False),
-        admin_role: discord.PermissionOverwrite(read_messages=True)
-    }
-    cat_admin = await guild.create_category("━━━ ADMIN PANEL ━━━", overwrites=overwrites_admin)
-    await guild.create_text_channel("🔒┃admin-chat", category=cat_admin)
+    # ━━━ ADMIN PANEL ━━━
+    over_admin = {guild.default_role: discord.PermissionOverwrite(read_messages=False), admin_role: discord.PermissionOverwrite(read_messages=True)}
+    cat_admin = await guild.create_category("━━━ ADMIN PANEL ━━━", overwrites=over_admin)
+    
+    ch_adm_ch = await guild.create_text_channel("🔒┃admin-chat", category=cat_admin)
+    await send_info(ch_adm_ch, "🔒 TAJNY CZAT", "Miejsce na wewnętrzne rozmowy administracji.")
 
-    # --- SUPPORT ---
+    # ━━━ SUPPORT ━━━
     cat_supp = await guild.create_category("━━━ SUPPORT ━━━")
-    await guild.create_text_channel("🎫┃otwórz-ticket", category=cat_supp)
+    ch_tick = await guild.create_text_channel("🎫┃otwórz-ticket", category=cat_supp)
+    await send_info(ch_tick, "🎫 WSPARCIE", "Masz problem lub chcesz coś kupić? Wpisz `/ticket`, a otworzymy dla Ciebie prywatny kanał.")
 
-    # 4. Wysyłanie Treści (Embedy)
-
-    # Opis projektu
-    embed_desc = discord.Embed(title="🚀 TITAN NETWORK V12 - O PROJEKCIE", color=discord.Color.blue())
-    embed_desc.description = (
-        "**TITAN V12** to owoc **5 miesięcy pracy** deweloperów.\n\n"
-        "🟢 **Baza Proxy:** 30,000+ aktywnych węzłów Ghost-Proxy.\n"
-        "🟢 **Technologia:** Działanie w RAM (Ghost-Mode), brak śladów na dysku.\n"
-        "🟢 **Status:** Najwyższy poziom niewykrywalności (FUD)."
-    )
-    await ch_desc.send(embed=embed_desc)
-
-    # Powitanie w Ogłoszeniach Publicznych
-    await ch_ann_pub.send("🔔 **Witaj w ogłoszeniach ogólnych!** Tutaj znajdziesz info o promocjach i nowych usługach.")
-
-    # 5. Cennik
-    embed_p = discord.Embed(title="💎 CENNIK", color=discord.Color.gold())
-    embed_p.add_field(name="Titan 24H", value="`FREE` (Zrób zadanie)", inline=False)
-    embed_p.add_field(name="Custom Locker", value="`od 100 PLN`", inline=False)
-    await ch_price.send(embed=embed_p)
-
-    await interaction.followup.send("✅ Serwer TITAN ze strefą Customer został zbudowany!")
+    await interaction.followup.send("✅ Serwer został w pełni skonfigurowany z informacjami na każdym kanale!")
 
 # --- POZOSTAŁE KOMENDY ---
 
@@ -121,12 +121,9 @@ async def licencja(interaction: discord.Interaction):
 
 @bot.tree.command(name="ticket", description="Otwiera ticket")
 async def ticket(interaction: discord.Interaction):
-    overwrites = {
-        interaction.guild.default_role: discord.PermissionOverwrite(read_messages=False), 
-        interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-    }
-    chan = await interaction.guild.create_text_channel(f"ticket-{interaction.user.name}", overwrites=overwrites)
-    await chan.send(f"Witaj {interaction.user.mention}! Opisz swoją sprawę.")
+    overwrites = {guild.default_role: discord.PermissionOverwrite(read_messages=False), interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True)}
+    chan = await interaction.guild.create_text_channel(f"🎫-ticket-{interaction.user.name}", overwrites=overwrites)
+    await chan.send(f"Witaj {interaction.user.mention}! Czekaj na Admina.")
     await interaction.response.send_message(f"✅ Ticket: {chan.mention}", ephemeral=True)
 
 if __name__ == "__main__":
