@@ -1,107 +1,79 @@
 import discord
-from discord import app_commands, ui
+from discord import app_commands
 from discord.ext import commands
-import os, threading, hashlib, time, requests
-from flask import Flask, jsonify, request
+import hashlib
+import time
+import os
 
 # --- KONFIGURACJA ---
-app = Flask('')
-WEBHOOK_URL = "https://discord.com/api/webhooks/1502378413179277506/_YBOofVZk0ArSieyz0uarZNJ8m7PpOT7BsiKhFdHOaxVe2Hzf_rhoRmLEBwYrBs4ycda"
-SALT = "TITAN_V12_SECRET_2026"
-blacklisted_hwids = ["BAN-123"]
-
-# Najmocniejsze proxy SOCKS5
-PROXY_LINKS = {
-    "mala": "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt",
-    "duza": "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"
-}
-
-# Funkcja wysyłająca powiadomienia na Twój Webhook
-def log_to_webhook(content):
-    data = {"content": content}
-    try:
-        requests.post(WEBHOOK_URL, json=data)
-    except:
-        pass
-
-# --- API DLA C++ ---
-@app.route('/check_auth', methods=['GET'])
-def check_auth():
-    user_hwid = request.args.get('hwid', 'Unknown')
-    size = request.args.get('size', 'mala')
-    
-    if user_hwid.upper() in blacklisted_hwids:
-        log_to_webhook(f"⚠️ **PRÓBA WEJŚCIA:** Zablokowany użytkownik (HWID: `{user_hwid}`) próbował odpalić program.")
-        return jsonify({"status": "banned"}), 403
-    
-    return jsonify({
-        "status": "ok", 
-        "proxy_link": PROXY_LINKS.get(size, PROXY_LINKS["mala"])
-    }), 200
-
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
-
-# --- BOT DISCORD ---
-TOKEN = os.environ.get("DISCORD_TOKEN")
-
-class TicketModal(ui.Modal, title='Panel Wsparcia TITAN'):
-    subject = ui.TextInput(label='Temat', placeholder='W czym problem?')
-    desc = ui.TextInput(label='Opis', style=discord.TextStyle.paragraph)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-        }
-        channel = await guild.create_text_channel(f'ticket-{interaction.user.name}', overwrites=overwrites)
-        
-        # Logowanie otwarcia ticketu na Webhook
-        log_to_webhook(f"🎫 **NOWY TICKET:** Użytkownik {interaction.user.name} otworzył sprawę: `{self.subject.value}`")
-        
-        await channel.send(f"Witaj {interaction.user.mention}, administracja zaraz Ci pomoże.\n**Temat:** {self.subject.value}\n**Opis:** {self.desc.value}")
-        await interaction.response.send_message(f"Otwarto ticket: {channel.mention}", ephemeral=True)
+TOKEN = os.getenv('DISCORD_TOKEN')
+SALT = "TITAN_ULTIMATE_2026" 
 
 class TitanBot(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix="!", intents=discord.Intents.all())
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.guilds = True
+        super().__init__(command_prefix="!", intents=intents)
+
     async def setup_hook(self):
+        # Synchronizuje komendy slash z serwerem Discord
         await self.tree.sync()
+        print(f"Zsynchronizowano komendy slash dla {self.user}")
 
 bot = TitanBot()
 
-@bot.tree.command(name="licencja", description="Klucz 20s dla rangi Customer")
-async def licencja(interaction: discord.Interaction):
-    if not any(role.name == "Customer" for role in interaction.user.roles):
-        await interaction.response.send_message("❌ Nie jesteś w grupie Customer!", ephemeral=True)
-        return
-    
-    t_step = int(time.time() // 20)
-    key = hashlib.md5(f"{t_step}{SALT}".encode()).hexdigest().upper()[:8]
-    formatted_key = f"TITAN-{key}"
-    
-    log_to_webhook(f"🔑 **GENEROWANIE:** Użytkownik {interaction.user.name} wygenerował klucz sesji.")
-    await interaction.response.send_message(f"✅ Twój klucz (ważny 20s): `{formatted_key}`", ephemeral=True)
+def get_md5_short(data):
+    return hashlib.md5(data.encode()).hexdigest().upper()[:8]
 
-@bot.tree.command(name="ticket", description="Zgłoś problem do administracji")
+@bot.tree.command(name="gen", description="Generuje tymczasowy klucz licencyjny Titan V12")
+async def gen(interaction: discord.Interaction):
+    ts = int(time.time() // 20)
+    key_hash = get_md5_short(str(ts) + SALT)
+    current_key = f"TITAN-{key_hash}"
+    
+    embed = discord.Embed(title="🛡️ TITAN V12 - KLUCZ", color=0x00ff00)
+    embed.add_field(name="TWÓJ KLUCZ:", value=f"`{current_key}`", inline=False)
+    embed.set_footer(text="Pospiesz się! Klucz wygasa za około 20 sekund.")
+    
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="ticket", description="Otwiera prywatny kanał wsparcia/zakupu")
 async def ticket(interaction: discord.Interaction):
-    await interaction.response.send_modal(TicketModal())
+    guild = interaction.guild
+    user = interaction.user
 
-@bot.tree.command(name="bl_add", description="Banowanie HWID (Admin)")
-@app_commands.checks.has_permissions(administrator=True)
-async def bl_add(interaction: discord.Interaction, hwid: str):
-    blacklisted_hwids.append(hwid.upper())
-    log_to_webhook(f"🚫 **BLACKLIST:** Admin {interaction.user.name} zbanował HWID: `{hwid}`")
-    await interaction.response.send_message(f"Zbanowano HWID: `{hwid}`", ephemeral=True)
+    channel_name = f"ticket-{user.name.lower()}"
 
-@bot.event
-async def on_ready():
-    print(f"TITAN BOT GOTOWY: {bot.user}")
-    log_to_webhook("✅ **SYSTEM ONLINE:** Bot i serwer API zostały uruchomione pomyślnie.")
+    # Uprawnienia: Widzi tylko admin (kto ma zarządzanie kanałami) i użytkownik
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(read_messages=False),
+        user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+        guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+    }
 
-if __name__ == "__main__":
-    threading.Thread(target=run_flask).start()
+    channel = await guild.create_text_channel(channel_name, overwrites=overwrites)
+
+    embed = discord.Embed(
+        title="🎫 NOWY TICKET", 
+        description=f"Witaj {user.mention}! Zaraz ktoś z administracji się Tobą zajmie.", 
+        color=0x3498db
+    )
+    embed.add_field(name="KOMENDA ZAMKNIĘCIA:", value="Użyj `/close`, aby usunąć ten kanał.", inline=False)
+    
+    await channel.send(embed=embed)
+    await interaction.response.send_message(f"✅ Stworzono ticket: {channel.mention}", ephemeral=True)
+
+@bot.tree.command(name="close", description="Zamyka i usuwa aktualny kanał ticketu")
+async def close(interaction: discord.Interaction):
+    if "ticket-" in interaction.channel.name:
+        await interaction.response.send_message("Zamykanie ticketu za 3 sekundy...")
+        time.sleep(3)
+        await interaction.channel.delete()
+    else:
+        await interaction.response.send_message("❌ Tej komendy możesz użyć tylko na kanale typu ticket!", ephemeral=True)
+
+if TOKEN:
     bot.run(TOKEN)
+else:
+    print("BŁĄD: Brak DISCORD_TOKEN w zmiennych środowiskowych!")
