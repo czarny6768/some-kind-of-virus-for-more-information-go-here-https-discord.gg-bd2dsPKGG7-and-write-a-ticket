@@ -1,15 +1,17 @@
 import discord
 from discord import app_commands
 import os
+import random
+import string
 from flask import Flask
 from threading import Thread
 
-# --- KONFIGURACJA SERWERA WWW DLA RENDERA ---
+# --- SERWER WWW DLA HOSTINGU (RENDER) ---
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "Titan V12 is running!"
+    return "Titan V12 is alive!"
 
 def run_web():
     app.run(host='0.0.0.0', port=8080)
@@ -24,14 +26,14 @@ GEN_ROLE_ID = 1500513889064980661        # Ranga do /gen
 MEMBER_ROLE_ID = 1465514942340792340     # Ranga nadawana przez weryfikację
 TICKET_CATEGORY_ID = 1502371150401900545 # Kategoria ticketów
 
-# --- SYSTEM TICKETÓW ---
+# --- SYSTEM TICKETÓW (NAPRAWIONY) ---
 class TicketControl(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(label="🔒 Zamknij Ticket", style=discord.ButtonStyle.danger, custom_id="close_t")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Usuwanie kanału...")
+        await interaction.response.send_message("Zamykanie ticketu...")
         await interaction.channel.delete()
 
 class TicketOpen(discord.ui.View):
@@ -42,16 +44,32 @@ class TicketOpen(discord.ui.View):
     async def open_t(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         category = guild.get_channel(TICKET_CATEGORY_ID)
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(read_messages=False),
-            interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
-            guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
-        }
-        ch = await guild.create_text_channel(name=f"ticket-{interaction.user.name}", category=category, overwrites=overwrites)
-        await interaction.response.send_message(f"✅ Otwarto ticket: {ch.mention}", ephemeral=True)
-        await ch.send(f"Siema {interaction.user.mention}, opisz sprawę.", view=TicketControl())
+        
+        if category is None:
+            return await interaction.response.send_message("❌ Błąd: Kategoria ticketów nie istnieje na tym serwerze!", ephemeral=True)
 
-# --- WERYFIKACJA ---
+        try:
+            # Tworzenie kanału z uprawnieniami
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                interaction.user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            }
+            
+            ch = await guild.create_text_channel(
+                name=f"ticket-{interaction.user.name}",
+                category=category,
+                overwrites=overwrites
+            )
+            
+            await interaction.response.send_message(f"✅ Otwarto ticket: {ch.mention}", ephemeral=True)
+            await ch.send(f"Siema {interaction.user.mention}, opisz swój problem.", view=TicketControl())
+        except discord.Forbidden:
+            await interaction.response.send_message("❌ Bot nie ma uprawnień do tworzenia kanałów! Daj mu rolę Administratora.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Wystąpił błąd: {e}", ephemeral=True)
+
+# --- SYSTEM WERYFIKACJI ---
 class VerifyView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -60,10 +78,15 @@ class VerifyView(discord.ui.View):
     async def verify(self, interaction: discord.Interaction, button: discord.ui.Button):
         role = interaction.guild.get_role(MEMBER_ROLE_ID)
         if role:
-            await interaction.user.add_roles(role)
-            await interaction.response.send_message("Nadano rangę!", ephemeral=True)
+            try:
+                await interaction.user.add_roles(role)
+                await interaction.response.send_message("✅ Pomyślnie nadano rangę członek!", ephemeral=True)
+            except:
+                await interaction.response.send_message("❌ Bot nie może nadać roli. Sprawdź czy rola bota jest wyżej niż rola członek!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Nie znaleziono roli o podanym ID.", ephemeral=True)
 
-# --- BOT ---
+# --- GŁÓWNA KLASA BOTA ---
 class TitanBot(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.all())
@@ -79,15 +102,22 @@ bot = TitanBot()
 
 @bot.event
 async def on_ready():
-    print(f'✅ Połączono jako {bot.user}')
+    print(f'✅ Titan Bot online jako {bot.user}')
 
-@bot.tree.command(name="gen", description="Uruchamia sesję Titan V12")
-async def gen(interaction: discord.Interaction, cel: str, port: int, czas: int):
+# --- NOWA KOMENDA /GEN (JEDNORAZOWY KOD) ---
+@bot.tree.command(name="gen", description="Generuje jednorazowy kod dostępu")
+async def gen(interaction: discord.Interaction):
     role = interaction.guild.get_role(GEN_ROLE_ID)
     if role not in interaction.user.roles:
-        return await interaction.response.send_message("❌ Brak rangi!", ephemeral=True)
-    await interaction.response.send_message(f"🚀 **TITAN V12** | Cel: `{cel}` | Port: `{port}` | Czas: `{czas}s`")
+        return await interaction.response.send_message("❌ Tylko dla osób z rangą Titan!", ephemeral=True)
+    
+    # Generowanie kodu (format: TITAN-XXXX-XXXX)
+    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+    final_code = f"TITAN-{code[:4]}-{code[4:]}"
+    
+    await interaction.response.send_message(f"🚀 **TWÓJ KOD:** `{final_code}`\n*Kod jest jednorazowy.*")
 
+# --- KOMENDA /SETUP ---
 @bot.tree.command(name="setup", description="Rozstawianie paneli")
 @app_commands.choices(typ=[
     app_commands.Choice(name="Weryfikacja", value="ver"),
@@ -96,17 +126,16 @@ async def gen(interaction: discord.Interaction, cel: str, port: int, czas: int):
 async def setup(interaction: discord.Interaction, typ: app_commands.Choice[str]):
     if not interaction.user.guild_permissions.administrator:
         return await interaction.response.send_message("Tylko Admin!", ephemeral=True)
+    
     if typ.value == "ver":
-        await interaction.channel.send("🛡️ **WERYFIKACJA**", view=VerifyView())
+        await interaction.channel.send("🛡️ **WERYFIKACJA**\nKliknij przycisk poniżej, aby otrzymać dostęp.", view=VerifyView())
     elif typ.value == "ticket":
-        await interaction.channel.send("🎫 **POMOC**", view=TicketOpen())
-    await interaction.response.send_message("Wysłano.", ephemeral=True)
+        await interaction.channel.send("🎫 **POMOC**\nKliknij przycisk poniżej, aby otworzyć ticket.", view=TicketOpen())
+    
+    await interaction.response.send_message("Panel wysłany.", ephemeral=True)
 
-# --- START ---
+# --- URUCHOMIENIE ---
 if __name__ == "__main__":
-    keep_alive() # Uruchamia serwer WWW w tle
+    keep_alive()
     TOKEN = os.getenv('DISCORD_TOKEN')
-    if TOKEN:
-        bot.run(TOKEN)
-    else:
-        print("BŁĄD: Brak DISCORD_TOKEN!")
+    bot.run(TOKEN)
