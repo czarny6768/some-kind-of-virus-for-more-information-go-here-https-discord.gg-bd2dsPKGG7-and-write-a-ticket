@@ -9,7 +9,7 @@ from threading import Thread
 # --- KONFIGURACJA ZGODNA Z C++ ---
 SALT = "TITAN_ULTIMATE_2026"
 
-# --- SERWER WWW DLA RENDERA (Żeby bot nie padł) ---
+# --- SERWER WWW DLA RENDERA ---
 app = Flask('')
 @app.route('/')
 def home(): return "Titan Auth Server is Running"
@@ -20,7 +20,7 @@ def keep_alive(): Thread(target=run_web).start()
 GUILD_ID = 1465514942340792340           
 GEN_ROLE_ID = 1500513889064980661        
 MEMBER_ROLE_ID = 1465514942340792340     
-TICKET_CATEGORY_ID = 1502371148778836009 
+TICKET_CATEGORY_ID = 1502371148778836009  
 
 class TicketControl(discord.ui.View):
     def __init__(self):
@@ -59,15 +59,27 @@ class TitanBot(discord.Client):
     def __init__(self):
         super().__init__(intents=discord.Intents.all())
         self.tree = app_commands.CommandTree(self)
+
     async def setup_hook(self):
-        self.add_view(TicketOpen()); self.add_view(TicketControl()); self.add_view(VerifyView())
-        await self.tree.sync()
+        # Rejestracja widoków (Persistent Views), aby działały po restarcie bota
+        self.add_view(TicketOpen())
+        self.add_view(TicketControl())
+        self.add_view(VerifyView())
+        
+        # Zamiast powolnego self.tree.sync() – synchronizujemy lokalnie dla Twojego serwera
+        guild = discord.Object(id=GUILD_ID)
+        self.tree.copy_global_to(guild=guild)
+        await self.tree.sync(guild=guild)
+        print(f" Wykonano szybką synchronizację komend dla serwera: {GUILD_ID}")
 
 bot = TitanBot()
 
-# --- GENERATOR KLUCZA ZGODNY Z TWOIM C++ ---
+@bot.event
+async def on_ready():
+    print(f" Zalogowano jako: {bot.user.name} (ID: {bot.user.id})")
+
+# --- GENERATOR KLUCZA ---
 def generate_titan_key():
-    # Twój C++ liczy: licenseKey == "TITAN-" + GetMD5(to_string(time(0)/20) + SALT)
     time_window = int(time.time() / 20)
     raw_string = str(time_window) + SALT
     md5_hash = hashlib.md5(raw_string.encode()).hexdigest().upper()
@@ -75,29 +87,40 @@ def generate_titan_key():
 
 @bot.tree.command(name="gen", description="Generuje klucz licencyjny do aplikacji C++")
 async def gen(interaction: discord.Interaction):
+    # Najpierw informujemy Discorda, że przetwarzamy żądanie (zapobiega to błędowi "Aplikacja nie reaguje")
+    await interaction.response.defer(ephemeral=True)
+    
     role = interaction.guild.get_role(GEN_ROLE_ID)
     if role not in interaction.user.roles:
-        return await interaction.response.send_message("❌ Nie masz uprawnień!", ephemeral=True)
+        return await interaction.followup.send("❌ Nie masz uprawnień!", ephemeral=True)
     
     key = generate_titan_key()
     
-    await interaction.response.send_message(
+    await interaction.followup.send(
         f"🛡️ **TITAN V12 ULTRA - AUTORYZACJA**\n\n"
         f"🔑 Twój klucz: `{key}`\n"
         f"⏳ Ważność: **20 sekund**\n\n"
-        f"Uruchom aplikację, wpisz swoje Discord ID i wklej ten klucz."
+        f"Uruchom aplikację, wpisz swoje Discord ID i wklej ten klucz.",
+        ephemeral=True
     )
 
 @bot.tree.command(name="setup", description="Panele bota")
 async def setup(interaction: discord.Interaction, typ: str):
     if not interaction.user.guild_permissions.administrator:
         return await interaction.response.send_message("Tylko Admin!", ephemeral=True)
+        
     if typ == "ver":
         await interaction.channel.send("🛡️ **WERYFIKACJA**", view=VerifyView())
     elif typ == "ticket":
         await interaction.channel.send("🎫 **TICKETY**", view=TicketOpen())
+        
     await interaction.response.send_message("Wysłano.", ephemeral=True)
 
 if __name__ == "__main__":
     keep_alive()
-    bot.run(os.getenv('DISCORD_TOKEN'))
+    # Pobieranie tokenu z systemu (upewnij się, że na Renderze dodałeś go w Environment Variables)
+    token = os.getenv('DISCORD_TOKEN')
+    if token:
+        bot.run(token)
+    else:
+        print(" Błąd: Brak zmiennej środowiskowej 'DISCORD_TOKEN'!")
